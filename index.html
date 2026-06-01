@@ -47,7 +47,7 @@ function parseGPX(text){const clean=text.replace(/^\uFEFF/,'');const xml=clean.r
 if(points.length===0){const nm=clean.match(/<name[^>]*>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?<\/name>/i);if(nm)name=nm[1].trim();for(const m of clean.matchAll(/<(?:[\w:]*(?:trkpt|rtept))([^>]+)>([\s\S]*?)<\/(?:[\w:]*(?:trkpt|rtept))>/gi)){const attrs=m[1],inner=m[2],latM=attrs.match(/lat="([^"]+)"/),lonM=attrs.match(/lon="([^"]+)"/);if(!latM||!lonM)continue;const lat=parseFloat(latM[1]),lon=parseFloat(lonM[1]);if(isNaN(lat)||isNaN(lon))continue;const eleM=inner.match(/<(?:[\w:]*ele)[^>]*>([\s\S]*?)<\/(?:[\w:]*ele)>/i);points.push({lat,lon,ele:eleM?parseFloat(eleM[1])||0:0})}}return{name,points}}
 function makeMarker(color,label){return L.divIcon({className:'',html:`<div style="width:24px;height:24px;border-radius:50%;background:${color};border:2px solid #1a1a2e;color:#1a1a2e;font-weight:800;font-size:12px;display:flex;align-items:center;justify-content:center;box-shadow:0 0 0 2px ${color}66;">${label}</div>`,iconSize:[24,24],iconAnchor:[12,12]})}
 function addTrackToMap(track){const latlngs=simplifyPoints(track.points,6000).map(p=>[p.lat,p.lon]);const poly=L.polyline(latlngs,{color:track.color,weight:5,opacity:.95,lineJoin:'round',lineCap:'round'}).addTo(map);poly.bindPopup(`<b style="color:${track.color}">${track.name}</b><br>距離: ${fmtDist(track.dist)}<br>獲得標高: ${Math.round(track.gain)} m`,{className:'gpx-popup'});const start=track.points[0],goal=track.points[track.points.length-1],startM=L.marker([start.lat,start.lon],{icon:makeMarker('#0078ff','S')}).addTo(map),goalM=L.marker([goal.lat,goal.lon],{icon:makeMarker('#ff6b6b','G')}).addTo(map);mapLayers.push(poly,startM,goalM);const b=poly.getBounds();allBounds=allBounds?allBounds.extend(b):b;if(allBounds&&allBounds.isValid())map.fitBounds(allBounds,{padding:[32,32]})}
-function drawElevation(trackList){const {ctx,width,height}=prepareCanvas(elevationCanvas);ctx.clearRect(0,0,width,height);ctx.fillStyle='#111827';ctx.fillRect(0,0,width,height);ctx.fillStyle='#7d8590';ctx.font='10px -apple-system, Helvetica Neue, Arial, sans-serif';ctx.textAlign='left';ctx.textBaseline='top';ctx.fillText('ELEVATION PROFILE',12,8);if(!trackList.length){ctx.font='13px -apple-system, Helvetica Neue, Arial, sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText('GPXを読み込むと高低図を表示します',width/2,height/2);return}const padL=48,padR=16,padT=28,padB=26,plotW=Math.max(1,width-padL-padR),plotH=Math.max(1,height-padT-padB);let minEle=Infinity,maxEle=-Infinity,eleCount=0,totalDist=0;for(const t of trackList){totalDist+=t.dist||0;for(const p of t.points){if(Number.isFinite(p.ele)){if(p.ele<minEle)minEle=p.ele;if(p.ele>maxEle)maxEle=p.ele;eleCount++}}}if(eleCount<2||totalDist<=0)return;if(maxEle-minEle<1){maxEle+=.5;minEle-=.5}const eleRange=maxEle-minEle;ctx.fillStyle='#7d8590';
+function drawElevation(trackList){const {ctx,width,height}=prepareCanvas(elevationCanvas);ctx.clearRect(0,0,width,height);ctx.fillStyle='#111827';ctx.fillRect(0,0,width,height);ctx.fillStyle='#7d8590';ctx.font='10px -apple-system, Helvetica Neue, Arial, sans-serif';ctx.textAlign='left';ctx.textBaseline='top';ctx.fillText('ELEVATION PROFILE',12,8);if(!trackList.length){ctx.font='13px -apple-system, Helvetica Neue, Arial, sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText('GPXを読み込むと高低図を表示します',width/2,height/2);return}const padL=48,padR=16,padT=28,padB=48,plotW=Math.max(1,width-padL-padR),plotH=Math.max(1,height-padT-padB);let minEle=Infinity,maxEle=-Infinity,eleCount=0,totalDist=0;for(const t of trackList){totalDist+=t.dist||0;for(const p of t.points){if(Number.isFinite(p.ele)){if(p.ele<minEle)minEle=p.ele;if(p.ele>maxEle)maxEle=p.ele;eleCount++}}}if(eleCount<2||totalDist<=0)return;if(maxEle-minEle<1){maxEle+=.5;minEle-=.5}const eleRange=maxEle-minEle;ctx.fillStyle='#7d8590';
 ctx.font='10px -apple-system, Helvetica Neue, Arial, sans-serif';
 
 const minGrid=Math.floor(minEle/100)*100;
@@ -67,19 +67,39 @@ for(let ele=minGrid; ele<=maxGrid; ele+=100){
   ctx.fillText(ele+'m',padL-6,y);
 }
 
-// 縦線（5kmごと）
+// 縦線・距離ラベル
+// 50km以下: 5km刻み / 50〜100km: 10km刻み / 100km超: 20km刻み
+// ラベルは常に90度回転表示
 const totalKm=totalDist/1000;
-for(let km=0; km<=totalKm; km+=5){
+const kmStep=totalKm<=50?5:(totalKm<=100?10:20);
+
+for(let km=0; km<=totalKm; km+=kmStep){
   const x=padL+((km*1000)/totalDist)*plotW;
-  ctx.strokeStyle=(km%10===0)?'rgba(125,133,144,0.35)':'rgba(125,133,144,0.18)';
+  ctx.strokeStyle=(km%(kmStep*2)===0)?'rgba(125,133,144,0.35)':'rgba(125,133,144,0.18)';
   ctx.beginPath();
   ctx.moveTo(x,padT);
   ctx.lineTo(x,padT+plotH);
   ctx.stroke();
 
-  ctx.textAlign=(km===0)?'left':'center';
-  ctx.textBaseline='top';
-  ctx.fillText(km+'km',x,height-padB+8);
+  ctx.save();
+  ctx.translate(x,height-padB+36);
+  ctx.rotate(-Math.PI/2);
+  ctx.textAlign='left';
+  ctx.textBaseline='middle';
+  ctx.fillText(km+'km',0,0);
+  ctx.restore();
+}
+
+const lastTick=Math.floor(totalKm/kmStep)*kmStep;
+if(totalKm-lastTick>kmStep*0.35){
+  const x=padL+plotW;
+  ctx.save();
+  ctx.translate(x,height-padB+36);
+  ctx.rotate(-Math.PI/2);
+  ctx.textAlign='left';
+  ctx.textBaseline='middle';
+  ctx.fillText(totalKm.toFixed(1)+'km',0,0);
+  ctx.restore();
 }let distOffset=0;for(const t of trackList){const pts=simplifyPoints(t.points,5000);ctx.beginPath();pts.forEach((p,i)=>{const x=padL+((distOffset+p.dist)/totalDist)*plotW,y=padT+((maxEle-p.ele)/eleRange)*plotH;if(i===0)ctx.moveTo(x,y);else ctx.lineTo(x,y)});ctx.strokeStyle=t.color;ctx.lineWidth=2.2;ctx.lineJoin='round';ctx.lineCap='round';ctx.stroke();distOffset+=t.dist}}
 function updateUI(last){const has=tracks.length>0;statsWrap.style.display=has?'flex':'none';clearBtn.style.display=has?'':'none';if(!has)return;const totalDist=tracks.reduce((s,t)=>s+t.dist,0),totalGain=tracks.reduce((s,t)=>s+t.gain,0);document.getElementById('sName').textContent=last?last.name:tracks[tracks.length-1].name;document.getElementById('sDist').textContent=fmtDist(totalDist);document.getElementById('sEle').textContent=Math.round(totalGain)+' m'}
 function loadFile(file){if(!file.name.toLowerCase().endsWith('.gpx')){showToast(`${file.name} はGPXファイルではありません`);return}setStatus(`${file.name} を読み込み中...`);const reader=new FileReader();reader.onload=e=>{try{const {name,points:rawPoints}=parseGPX(e.target.result);if(rawPoints.length<2){showToast(`${file.name}: トラックポイントが見つかりませんでした`);setStatus('読み込み失敗');return}const points=enrichPoints(rawPoints),{dist,gain}=calcStats(points),color=COLORS[colorIdx++%COLORS.length],track={name,points,dist,gain,color};tracks.push(track);addTrackToMap(track);drawElevation(tracks);updateUI(track);setStatus('')}catch(err){console.error(err);showToast(`読み込みエラー: ${err.message}`);setStatus(`読み込みエラー: ${err.message}`)}};reader.onerror=()=>{showToast(`${file.name}: 読み込みに失敗しました`);setStatus('読み込み失敗')};reader.readAsText(file,'UTF-8')}
