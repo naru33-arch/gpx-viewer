@@ -102,6 +102,13 @@ function updateCurrentPositionFromSlider(){
   }else{
     currentMarker.setLatLng([p.lat,p.lon]);
   }
+
+  // 現在位置の赤丸が表示範囲外に出そうな時だけ地図を自動スクロール
+  map.panInside([p.lat,p.lon],{
+    paddingTopLeft:[44,44],
+    paddingBottomRight:[44,44]
+  });
+
   posDist.textContent=(p.dist/1000).toFixed(1)+'km';
   posEle.textContent=Math.round(p.ele)+'m';
   drawElevation(tracks,currentDistance);
