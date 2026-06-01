@@ -15,6 +15,10 @@
 .pos-info{min-width:98px;text-align:right;font-size:12px;color:#e6edf3;font-variant-numeric:tabular-nums;line-height:1.25}
 .pos-info span{color:#0078ff;font-weight:700}
 
+
+.play-btn{width:38px;height:34px;border-radius:999px;border:1px solid #1a5276;background:#0f3460;color:#e6edf3;font-size:15px;font-weight:800;display:flex;align-items:center;justify-content:center;cursor:pointer;-webkit-appearance:none;appearance:none}
+.play-btn.playing{background:#0078ff;color:#fff;border-color:#0078ff}
+
 </style>
 </head>
 <body>
@@ -38,6 +42,7 @@
 </div>
 
 <div class="slider-wrap" id="sliderWrap">
+  <button class="play-btn" id="playBtn" type="button">▶</button>
   <input type="range" id="posSlider" min="0" max="1000" value="0">
   <div class="pos-info"><span id="posDist">0.0km</span><br><span id="posEle">0m</span></div>
 </div>
@@ -45,8 +50,8 @@
 <div class="toast" id="toast"></div>
 <script>
 (function(){
-const fileInput=document.getElementById('fileInput'), elevationCanvas=document.getElementById('elevationCanvas'), statsWrap=document.getElementById('statsWrap'), clearBtn=document.getElementById('clearBtn'), sliderWrap=document.getElementById('sliderWrap'), posSlider=document.getElementById('posSlider'), posDist=document.getElementById('posDist'), posEle=document.getElementById('posEle');
-const COLORS=['#0078ff']; let tracks=[],mapLayers=[],colorIdx=0,allBounds=null,currentMarker=null,currentDistance=0;
+const fileInput=document.getElementById('fileInput'), elevationCanvas=document.getElementById('elevationCanvas'), statsWrap=document.getElementById('statsWrap'), clearBtn=document.getElementById('clearBtn'), sliderWrap=document.getElementById('sliderWrap'), playBtn=document.getElementById('playBtn'), posSlider=document.getElementById('posSlider'), posDist=document.getElementById('posDist'), posEle=document.getElementById('posEle');
+const COLORS=['#0078ff']; let tracks=[],mapLayers=[],colorIdx=0,allBounds=null,currentMarker=null,currentDistance=0,playTimer=null,isPlaying=false;
 const map=L.map('map',{center:[36.2,138.2],zoom:5,zoomControl:true,attributionControl:true});
 L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/std/{z}/{x}/{y}.png',{attribution:'<a href="https://maps.gsi.go.jp/development/ichiran.html">国土地理院</a>',maxZoom:18}).addTo(map);
 function showToast(msg){const t=document.getElementById('toast');t.textContent=msg;t.style.display='block';setTimeout(()=>{t.style.display='none'},4000)}
@@ -103,16 +108,48 @@ function updateCurrentPositionFromSlider(){
     currentMarker.setLatLng([p.lat,p.lon]);
   }
 
-  // 現在位置の赤丸が表示範囲外に出そうな時だけ地図を自動スクロール
-  map.panInside([p.lat,p.lon],{
-    paddingTopLeft:[44,44],
-    paddingBottomRight:[44,44]
-  });
+  // 現在位置の赤丸を常に地図中央付近へ追従
+  map.panTo([p.lat,p.lon],{animate:false});
 
   posDist.textContent=(p.dist/1000).toFixed(1)+'km';
   posEle.textContent=Math.round(p.ele)+'m';
   drawElevation(tracks,currentDistance);
 }
+function setPlaying(on){
+  isPlaying=on;
+  playBtn.textContent=on?'⏸':'▶';
+  playBtn.classList.toggle('playing',on);
+}
+function stopPlayback(){
+  if(playTimer){
+    clearInterval(playTimer);
+    playTimer=null;
+  }
+  setPlaying(false);
+}
+function startPlayback(){
+  if(!tracks.length)return;
+  stopPlayback();
+  setPlaying(true);
+  playTimer=setInterval(()=>{
+    let v=Number(posSlider.value);
+    v+=3;
+    if(v>=1000){
+      v=1000;
+      posSlider.value=v;
+      updateCurrentPositionFromSlider();
+      stopPlayback();
+      return;
+    }
+    posSlider.value=v;
+    updateCurrentPositionFromSlider();
+  },60);
+}
+function togglePlayback(){
+  if(isPlaying)stopPlayback();
+  else startPlayback();
+}
+
 
 function addTrackToMap(track){const latlngs=simplifyPoints(track.points,6000).map(p=>[p.lat,p.lon]);const poly=L.polyline(latlngs,{color:track.color,weight:5,opacity:.95,lineJoin:'round',lineCap:'round'}).addTo(map);poly.bindPopup(`<b style="color:${track.color}">${track.name}</b><br>距離: ${fmtDist(track.dist)}<br>獲得標高: ${Math.round(track.gain)} m`,{className:'gpx-popup'});const start=track.points[0],goal=track.points[track.points.length-1],startM=L.marker([start.lat,start.lon],{icon:makeMarker('#0078ff','S')}).addTo(map),goalM=L.marker([goal.lat,goal.lon],{icon:makeMarker('#ff6b6b','G')}).addTo(map);mapLayers.push(poly,startM,goalM);const b=poly.getBounds();allBounds=allBounds?allBounds.extend(b):b;if(allBounds&&allBounds.isValid())map.fitBounds(allBounds,{padding:[32,32]})}
 function drawElevation(trackList, markerDist=null){const {ctx,width,height}=prepareCanvas(elevationCanvas);ctx.clearRect(0,0,width,height);ctx.fillStyle='#111827';ctx.fillRect(0,0,width,height);ctx.fillStyle='#7d8590';ctx.font='10px -apple-system, Helvetica Neue, Arial, sans-serif';ctx.textAlign='left';ctx.textBaseline='top';ctx.fillText('ELEVATION PROFILE',12,8);if(!trackList.length){ctx.font='13px -apple-system, Helvetica Neue, Arial, sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText('GPXを読み込むと高低図を表示します',width/2,height/2);return}const padL=48,padR=16,padT=28,padB=48,plotW=Math.max(1,width-padL-padR),plotH=Math.max(1,height-padT-padB);let minEle=Infinity,maxEle=-Infinity,eleCount=0,totalDist=0;for(const t of trackList){totalDist+=t.dist||0;for(const p of t.points){if(Number.isFinite(p.ele)){if(p.ele<minEle)minEle=p.ele;if(p.ele>maxEle)maxEle=p.ele;eleCount++}}}if(eleCount<2||totalDist<=0)return;if(maxEle-minEle<1){maxEle+=.5;minEle-=.5}const eleRange=maxEle-minEle;ctx.fillStyle='#7d8590';
@@ -191,8 +228,8 @@ if(markerDist!==null&&totalDist>0){
   }
 }}
 function updateUI(last){const has=tracks.length>0;statsWrap.style.display=has?'flex':'none';clearBtn.style.display=has?'':'none';if(!has)return;const totalDist=tracks.reduce((s,t)=>s+t.dist,0),totalGain=tracks.reduce((s,t)=>s+t.gain,0);document.getElementById('sName').textContent=last?last.name:tracks[tracks.length-1].name;document.getElementById('sDist').textContent=fmtDist(totalDist);document.getElementById('sEle').textContent=Math.round(totalGain)+' m'}
-function loadFile(file){if(!file.name.toLowerCase().endsWith('.gpx')){showToast(`${file.name} はGPXファイルではありません`);return}setStatus(`${file.name} を読み込み中...`);const reader=new FileReader();reader.onload=e=>{try{const {name,points:rawPoints}=parseGPX(e.target.result);if(rawPoints.length<2){showToast(`${file.name}: トラックポイントが見つかりませんでした`);setStatus('読み込み失敗');return}const points=enrichPoints(rawPoints),{dist,gain}=calcStats(points),color=COLORS[colorIdx++%COLORS.length],track={name,points,dist,gain,color};tracks.push(track);addTrackToMap(track);sliderWrap.classList.add('show');posSlider.value=0;updateCurrentPositionFromSlider();updateUI(track);setStatus('')}catch(err){console.error(err);showToast(`読み込みエラー: ${err.message}`);setStatus(`読み込みエラー: ${err.message}`)}};reader.onerror=()=>{showToast(`${file.name}: 読み込みに失敗しました`);setStatus('読み込み失敗')};reader.readAsText(file,'UTF-8')}
-posSlider.addEventListener('input',updateCurrentPositionFromSlider);fileInput.addEventListener('change',e=>{const file=e.target.files&&e.target.files[0];if(!file){setStatus('ファイルが選択されませんでした。');return}loadFile(file);e.target.value=''});clearBtn.addEventListener('click',()=>{mapLayers.forEach(layer=>map.removeLayer(layer));tracks=[];mapLayers=[];colorIdx=0;allBounds=null;currentMarker=null;currentDistance=0;sliderWrap.classList.remove('show');posSlider.value=0;posDist.textContent='0.0km';posEle.textContent='0m';updateUI(null);drawElevation(tracks);setStatus('クリアしました。')});window.addEventListener('resize',()=>{setTimeout(()=>{map.invalidateSize();drawElevation(tracks,currentDistance)},100)});drawElevation(tracks);
+function loadFile(file){stopPlayback();if(!file.name.toLowerCase().endsWith('.gpx')){showToast(`${file.name} はGPXファイルではありません`);return}setStatus(`${file.name} を読み込み中...`);const reader=new FileReader();reader.onload=e=>{try{const {name,points:rawPoints}=parseGPX(e.target.result);if(rawPoints.length<2){showToast(`${file.name}: トラックポイントが見つかりませんでした`);setStatus('読み込み失敗');return}const points=enrichPoints(rawPoints),{dist,gain}=calcStats(points),color=COLORS[colorIdx++%COLORS.length],track={name,points,dist,gain,color};tracks.push(track);addTrackToMap(track);sliderWrap.classList.add('show');posSlider.value=0;updateCurrentPositionFromSlider();updateUI(track);setStatus('')}catch(err){console.error(err);showToast(`読み込みエラー: ${err.message}`);setStatus(`読み込みエラー: ${err.message}`)}};reader.onerror=()=>{showToast(`${file.name}: 読み込みに失敗しました`);setStatus('読み込み失敗')};reader.readAsText(file,'UTF-8')}
+posSlider.addEventListener('input',()=>{stopPlayback();updateCurrentPositionFromSlider();});playBtn.addEventListener('click',togglePlayback);fileInput.addEventListener('change',e=>{const file=e.target.files&&e.target.files[0];if(!file){setStatus('ファイルが選択されませんでした。');return}loadFile(file);e.target.value=''});clearBtn.addEventListener('click',()=>{mapLayers.forEach(layer=>map.removeLayer(layer));stopPlayback();tracks=[];mapLayers=[];colorIdx=0;allBounds=null;currentMarker=null;currentDistance=0;sliderWrap.classList.remove('show');posSlider.value=0;posDist.textContent='0.0km';posEle.textContent='0m';updateUI(null);drawElevation(tracks);setStatus('クリアしました。')});window.addEventListener('resize',()=>{setTimeout(()=>{map.invalidateSize();drawElevation(tracks,currentDistance)},100)});drawElevation(tracks);
 })();
 </script>
 </body>
