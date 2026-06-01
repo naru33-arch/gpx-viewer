@@ -8,6 +8,13 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}html,body{height:100%;height:-webkit-fill-available}body{font-family:-apple-system,'Helvetica Neue',Arial,sans-serif;background:#1a1a2e;color:#e6edf3;display:flex;flex-direction:column;overflow:hidden;padding-bottom:env(safe-area-inset-bottom)}header{display:flex;align-items:center;gap:8px;padding:10px 16px;padding-top:calc(10px + env(safe-area-inset-top));background:#16213e;border-bottom:1px solid #0f3460;flex-shrink:0;flex-wrap:wrap}.logo{font-size:13px;font-weight:700;color:#0078ff;letter-spacing:.06em;white-space:nowrap;margin-right:4px}#fileInput{display:block;width:100%;max-width:260px;padding:8px;border:1px solid #1a5276;border-radius:6px;background:#0f3460;color:#e6edf3;font-size:13px;font-family:inherit}.stats{display:flex;gap:14px;margin-left:auto;align-items:flex-end}.stat{text-align:right}.file-stat{max-width:210px}.file-stat .stat-value{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.stat-label{font-size:9px;color:#7d8590;text-transform:uppercase;letter-spacing:.08em}.stat-value{font-size:13px;font-weight:600;font-variant-numeric:tabular-nums}.stat-value.hi{color:#0078ff}.clear-btn{padding:7px 12px;background:none;border:1px solid #1a5276;border-radius:6px;color:#7d8590;font-size:11px;font-family:inherit;cursor:pointer;-webkit-appearance:none;appearance:none;white-space:nowrap}.viewer{flex:1;min-height:0;display:grid;grid-template-rows:70% 30%;overflow:hidden}.map-wrap{position:relative;min-height:0;background:#1a1a2e;border-bottom:1px solid #0f3460}#map{width:100%;height:100%}.elevation-wrap{position:relative;min-height:0;background:#111827}#elevationCanvas{width:100%;height:100%;display:block}.info-panel{display:none}.toast{position:fixed;top:80px;left:50%;transform:translateX(-50%);background:rgba(255,107,107,.95);color:#fff;padding:10px 18px;border-radius:8px;font-size:13px;z-index:9999;display:none;max-width:90vw;text-align:center}.leaflet-container{background:#1a1a2e!important}.leaflet-control-zoom a{background:#16213e!important;color:#e6edf3!important;border-color:#0f3460!important;width:30px!important;height:30px!important;line-height:30px!important}.leaflet-control-attribution{background:rgba(22,33,62,.82)!important;color:#7d8590!important;font-size:9px!important}.leaflet-control-attribution a{color:#7d8590!important}.gpx-popup .leaflet-popup-content-wrapper{background:#16213e;border:1px solid #0f3460;border-radius:6px;color:#e6edf3}.gpx-popup .leaflet-popup-tip{background:#16213e}.gpx-popup .leaflet-popup-content{margin:10px 14px;font-size:13px;line-height:1.8}
+
+.slider-wrap{flex-shrink:0;background:#111827;border-top:1px solid #0f3460;padding:8px 16px calc(8px + env(safe-area-inset-bottom));display:none;gap:8px;align-items:center}
+.slider-wrap.show{display:flex}
+#posSlider{width:100%;accent-color:#0078ff}
+.pos-info{min-width:98px;text-align:right;font-size:12px;color:#e6edf3;font-variant-numeric:tabular-nums;line-height:1.25}
+.pos-info span{color:#0078ff;font-weight:700}
+
 </style>
 </head>
 <body>
@@ -29,11 +36,17 @@
     <canvas id="elevationCanvas"></canvas>
   </div>
 </div>
+
+<div class="slider-wrap" id="sliderWrap">
+  <input type="range" id="posSlider" min="0" max="1000" value="0">
+  <div class="pos-info"><span id="posDist">0.0km</span><br><span id="posEle">0m</span></div>
+</div>
+
 <div class="toast" id="toast"></div>
 <script>
 (function(){
-const fileInput=document.getElementById('fileInput'), elevationCanvas=document.getElementById('elevationCanvas'), statsWrap=document.getElementById('statsWrap'), clearBtn=document.getElementById('clearBtn');
-const COLORS=['#0078ff']; let tracks=[],mapLayers=[],colorIdx=0,allBounds=null;
+const fileInput=document.getElementById('fileInput'), elevationCanvas=document.getElementById('elevationCanvas'), statsWrap=document.getElementById('statsWrap'), clearBtn=document.getElementById('clearBtn'), sliderWrap=document.getElementById('sliderWrap'), posSlider=document.getElementById('posSlider'), posDist=document.getElementById('posDist'), posEle=document.getElementById('posEle');
+const COLORS=['#0078ff']; let tracks=[],mapLayers=[],colorIdx=0,allBounds=null,currentMarker=null,currentDistance=0;
 const map=L.map('map',{center:[36.2,138.2],zoom:5,zoomControl:true,attributionControl:true});
 L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/std/{z}/{x}/{y}.png',{attribution:'<a href="https://maps.gsi.go.jp/development/ichiran.html">国土地理院</a>',maxZoom:18}).addTo(map);
 function showToast(msg){const t=document.getElementById('toast');t.textContent=msg;t.style.display='block';setTimeout(()=>{t.style.display='none'},4000)}
@@ -46,8 +59,56 @@ function prepareCanvas(canvas){const rect=canvas.getBoundingClientRect(),dpr=win
 function parseGPX(text){const clean=text.replace(/^\uFEFF/,'');const xml=clean.replace(/\s+xmlns[^=]*="[^"]*"/g,'').replace(/<([a-zA-Z]+:[a-zA-Z])/g,m=>'<'+m.slice(m.indexOf(':')+1)).replace(/<\/([a-zA-Z]+:[a-zA-Z])/g,m=>'</'+m.slice(m.indexOf(':')+1));let points=[],name='トラック';try{const doc=new DOMParser().parseFromString(xml,'application/xml');if(!doc.querySelector('parsererror')){name=doc.querySelector('trk > name, rte > name, name')?.textContent?.trim()||name;doc.querySelectorAll('trkpt, rtept').forEach(p=>{const lat=parseFloat(p.getAttribute('lat')),lon=parseFloat(p.getAttribute('lon'));if(!isNaN(lat)&&!isNaN(lon)){const eleText=p.querySelector('ele')?.textContent;points.push({lat,lon,ele:Number.isFinite(parseFloat(eleText))?parseFloat(eleText):0,time:p.querySelector('time')?.textContent?.trim()||null})}})}}catch(_){}
 if(points.length===0){const nm=clean.match(/<name[^>]*>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?<\/name>/i);if(nm)name=nm[1].trim();for(const m of clean.matchAll(/<(?:[\w:]*(?:trkpt|rtept))([^>]+)>([\s\S]*?)<\/(?:[\w:]*(?:trkpt|rtept))>/gi)){const attrs=m[1],inner=m[2],latM=attrs.match(/lat="([^"]+)"/),lonM=attrs.match(/lon="([^"]+)"/);if(!latM||!lonM)continue;const lat=parseFloat(latM[1]),lon=parseFloat(lonM[1]);if(isNaN(lat)||isNaN(lon))continue;const eleM=inner.match(/<(?:[\w:]*ele)[^>]*>([\s\S]*?)<\/(?:[\w:]*ele)>/i);points.push({lat,lon,ele:eleM?parseFloat(eleM[1])||0:0})}}return{name,points}}
 function makeMarker(color,label){return L.divIcon({className:'',html:`<div style="width:24px;height:24px;border-radius:50%;background:${color};border:2px solid #1a1a2e;color:#1a1a2e;font-weight:800;font-size:12px;display:flex;align-items:center;justify-content:center;box-shadow:0 0 0 2px ${color}66;">${label}</div>`,iconSize:[24,24],iconAnchor:[12,12]})}
+function makeCurrentIcon(){return L.divIcon({className:'',html:`<div style="width:22px;height:22px;border-radius:50%;background:#ff2d55;border:3px solid #fff;box-shadow:0 0 0 2px rgba(255,45,85,.45),0 2px 8px rgba(0,0,0,.35);"></div>`,iconSize:[22,22],iconAnchor:[11,11]})}
+function getTotalDistance(){return tracks.reduce((s,t)=>s+(t.dist||0),0)}
+function getPointAtDistance(targetDist){
+  if(!tracks.length)return null;
+  let offset=0;
+  for(const t of tracks){
+    const pts=t.points;
+    if(!pts||pts.length<2){offset+=t.dist||0;continue}
+    if(targetDist<=offset+(t.dist||0)){
+      const local=targetDist-offset;
+      for(let i=1;i<pts.length;i++){
+        const a=pts[i-1],b=pts[i];
+        if(local<=b.dist){
+          const seg=b.dist-a.dist||1;
+          const r=Math.max(0,Math.min(1,(local-a.dist)/seg));
+          return {
+            lat:a.lat+(b.lat-a.lat)*r,
+            lon:a.lon+(b.lon-a.lon)*r,
+            ele:a.ele+(b.ele-a.ele)*r,
+            dist:targetDist
+          };
+        }
+      }
+      const last=pts[pts.length-1];
+      return {lat:last.lat,lon:last.lon,ele:last.ele,dist:targetDist};
+    }
+    offset+=t.dist||0;
+  }
+  const lastTrack=tracks[tracks.length-1],last=lastTrack.points[lastTrack.points.length-1];
+  return {lat:last.lat,lon:last.lon,ele:last.ele,dist:getTotalDistance()};
+}
+function updateCurrentPositionFromSlider(){
+  const total=getTotalDistance();
+  if(!total)return;
+  currentDistance=total*(Number(posSlider.value)/1000);
+  const p=getPointAtDistance(currentDistance);
+  if(!p)return;
+  if(!currentMarker){
+    currentMarker=L.marker([p.lat,p.lon],{icon:makeCurrentIcon(),zIndexOffset:1000}).addTo(map);
+    mapLayers.push(currentMarker);
+  }else{
+    currentMarker.setLatLng([p.lat,p.lon]);
+  }
+  posDist.textContent=(p.dist/1000).toFixed(1)+'km';
+  posEle.textContent=Math.round(p.ele)+'m';
+  drawElevation(tracks,currentDistance);
+}
+
 function addTrackToMap(track){const latlngs=simplifyPoints(track.points,6000).map(p=>[p.lat,p.lon]);const poly=L.polyline(latlngs,{color:track.color,weight:5,opacity:.95,lineJoin:'round',lineCap:'round'}).addTo(map);poly.bindPopup(`<b style="color:${track.color}">${track.name}</b><br>距離: ${fmtDist(track.dist)}<br>獲得標高: ${Math.round(track.gain)} m`,{className:'gpx-popup'});const start=track.points[0],goal=track.points[track.points.length-1],startM=L.marker([start.lat,start.lon],{icon:makeMarker('#0078ff','S')}).addTo(map),goalM=L.marker([goal.lat,goal.lon],{icon:makeMarker('#ff6b6b','G')}).addTo(map);mapLayers.push(poly,startM,goalM);const b=poly.getBounds();allBounds=allBounds?allBounds.extend(b):b;if(allBounds&&allBounds.isValid())map.fitBounds(allBounds,{padding:[32,32]})}
-function drawElevation(trackList){const {ctx,width,height}=prepareCanvas(elevationCanvas);ctx.clearRect(0,0,width,height);ctx.fillStyle='#111827';ctx.fillRect(0,0,width,height);ctx.fillStyle='#7d8590';ctx.font='10px -apple-system, Helvetica Neue, Arial, sans-serif';ctx.textAlign='left';ctx.textBaseline='top';ctx.fillText('ELEVATION PROFILE',12,8);if(!trackList.length){ctx.font='13px -apple-system, Helvetica Neue, Arial, sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText('GPXを読み込むと高低図を表示します',width/2,height/2);return}const padL=48,padR=16,padT=28,padB=48,plotW=Math.max(1,width-padL-padR),plotH=Math.max(1,height-padT-padB);let minEle=Infinity,maxEle=-Infinity,eleCount=0,totalDist=0;for(const t of trackList){totalDist+=t.dist||0;for(const p of t.points){if(Number.isFinite(p.ele)){if(p.ele<minEle)minEle=p.ele;if(p.ele>maxEle)maxEle=p.ele;eleCount++}}}if(eleCount<2||totalDist<=0)return;if(maxEle-minEle<1){maxEle+=.5;minEle-=.5}const eleRange=maxEle-minEle;ctx.fillStyle='#7d8590';
+function drawElevation(trackList, markerDist=null){const {ctx,width,height}=prepareCanvas(elevationCanvas);ctx.clearRect(0,0,width,height);ctx.fillStyle='#111827';ctx.fillRect(0,0,width,height);ctx.fillStyle='#7d8590';ctx.font='10px -apple-system, Helvetica Neue, Arial, sans-serif';ctx.textAlign='left';ctx.textBaseline='top';ctx.fillText('ELEVATION PROFILE',12,8);if(!trackList.length){ctx.font='13px -apple-system, Helvetica Neue, Arial, sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText('GPXを読み込むと高低図を表示します',width/2,height/2);return}const padL=48,padR=16,padT=28,padB=48,plotW=Math.max(1,width-padL-padR),plotH=Math.max(1,height-padT-padB);let minEle=Infinity,maxEle=-Infinity,eleCount=0,totalDist=0;for(const t of trackList){totalDist+=t.dist||0;for(const p of t.points){if(Number.isFinite(p.ele)){if(p.ele<minEle)minEle=p.ele;if(p.ele>maxEle)maxEle=p.ele;eleCount++}}}if(eleCount<2||totalDist<=0)return;if(maxEle-minEle<1){maxEle+=.5;minEle-=.5}const eleRange=maxEle-minEle;ctx.fillStyle='#7d8590';
 ctx.font='10px -apple-system, Helvetica Neue, Arial, sans-serif';
 
 const minGrid=Math.floor(minEle/100)*100;
@@ -100,10 +161,31 @@ if(totalKm-lastTick>kmStep*0.35){
   ctx.textBaseline='middle';
   ctx.fillText(totalKm.toFixed(1)+'km',0,0);
   ctx.restore();
-}let distOffset=0;for(const t of trackList){const pts=simplifyPoints(t.points,5000);ctx.beginPath();pts.forEach((p,i)=>{const x=padL+((distOffset+p.dist)/totalDist)*plotW,y=padT+((maxEle-p.ele)/eleRange)*plotH;if(i===0)ctx.moveTo(x,y);else ctx.lineTo(x,y)});ctx.strokeStyle=t.color;ctx.lineWidth=2.2;ctx.lineJoin='round';ctx.lineCap='round';ctx.stroke();distOffset+=t.dist}}
+}let distOffset=0;for(const t of trackList){const pts=simplifyPoints(t.points,5000);ctx.beginPath();pts.forEach((p,i)=>{const x=padL+((distOffset+p.dist)/totalDist)*plotW,y=padT+((maxEle-p.ele)/eleRange)*plotH;if(i===0)ctx.moveTo(x,y);else ctx.lineTo(x,y)});ctx.strokeStyle=t.color;ctx.lineWidth=2.2;ctx.lineJoin='round';ctx.lineCap='round';ctx.stroke();distOffset+=t.dist}
+if(markerDist!==null&&totalDist>0){
+  const mx=padL+(markerDist/totalDist)*plotW;
+  ctx.strokeStyle='#ff2d55';
+  ctx.lineWidth=2;
+  ctx.beginPath();
+  ctx.moveTo(mx,padT);
+  ctx.lineTo(mx,padT+plotH);
+  ctx.stroke();
+
+  const p=getPointAtDistance(markerDist);
+  if(p){
+    const my=padT+((maxEle-p.ele)/eleRange)*plotH;
+    ctx.beginPath();
+    ctx.arc(mx,my,4,0,Math.PI*2);
+    ctx.fillStyle='#ff2d55';
+    ctx.fill();
+    ctx.strokeStyle='#ffffff';
+    ctx.lineWidth=1.5;
+    ctx.stroke();
+  }
+}}
 function updateUI(last){const has=tracks.length>0;statsWrap.style.display=has?'flex':'none';clearBtn.style.display=has?'':'none';if(!has)return;const totalDist=tracks.reduce((s,t)=>s+t.dist,0),totalGain=tracks.reduce((s,t)=>s+t.gain,0);document.getElementById('sName').textContent=last?last.name:tracks[tracks.length-1].name;document.getElementById('sDist').textContent=fmtDist(totalDist);document.getElementById('sEle').textContent=Math.round(totalGain)+' m'}
-function loadFile(file){if(!file.name.toLowerCase().endsWith('.gpx')){showToast(`${file.name} はGPXファイルではありません`);return}setStatus(`${file.name} を読み込み中...`);const reader=new FileReader();reader.onload=e=>{try{const {name,points:rawPoints}=parseGPX(e.target.result);if(rawPoints.length<2){showToast(`${file.name}: トラックポイントが見つかりませんでした`);setStatus('読み込み失敗');return}const points=enrichPoints(rawPoints),{dist,gain}=calcStats(points),color=COLORS[colorIdx++%COLORS.length],track={name,points,dist,gain,color};tracks.push(track);addTrackToMap(track);drawElevation(tracks);updateUI(track);setStatus('')}catch(err){console.error(err);showToast(`読み込みエラー: ${err.message}`);setStatus(`読み込みエラー: ${err.message}`)}};reader.onerror=()=>{showToast(`${file.name}: 読み込みに失敗しました`);setStatus('読み込み失敗')};reader.readAsText(file,'UTF-8')}
-fileInput.addEventListener('change',e=>{const file=e.target.files&&e.target.files[0];if(!file){setStatus('ファイルが選択されませんでした。');return}loadFile(file);e.target.value=''});clearBtn.addEventListener('click',()=>{mapLayers.forEach(layer=>map.removeLayer(layer));tracks=[];mapLayers=[];colorIdx=0;allBounds=null;updateUI(null);drawElevation(tracks);setStatus('クリアしました。')});window.addEventListener('resize',()=>{setTimeout(()=>{map.invalidateSize();drawElevation(tracks)},100)});drawElevation(tracks);
+function loadFile(file){if(!file.name.toLowerCase().endsWith('.gpx')){showToast(`${file.name} はGPXファイルではありません`);return}setStatus(`${file.name} を読み込み中...`);const reader=new FileReader();reader.onload=e=>{try{const {name,points:rawPoints}=parseGPX(e.target.result);if(rawPoints.length<2){showToast(`${file.name}: トラックポイントが見つかりませんでした`);setStatus('読み込み失敗');return}const points=enrichPoints(rawPoints),{dist,gain}=calcStats(points),color=COLORS[colorIdx++%COLORS.length],track={name,points,dist,gain,color};tracks.push(track);addTrackToMap(track);sliderWrap.classList.add('show');posSlider.value=0;updateCurrentPositionFromSlider();updateUI(track);setStatus('')}catch(err){console.error(err);showToast(`読み込みエラー: ${err.message}`);setStatus(`読み込みエラー: ${err.message}`)}};reader.onerror=()=>{showToast(`${file.name}: 読み込みに失敗しました`);setStatus('読み込み失敗')};reader.readAsText(file,'UTF-8')}
+posSlider.addEventListener('input',updateCurrentPositionFromSlider);fileInput.addEventListener('change',e=>{const file=e.target.files&&e.target.files[0];if(!file){setStatus('ファイルが選択されませんでした。');return}loadFile(file);e.target.value=''});clearBtn.addEventListener('click',()=>{mapLayers.forEach(layer=>map.removeLayer(layer));tracks=[];mapLayers=[];colorIdx=0;allBounds=null;currentMarker=null;currentDistance=0;sliderWrap.classList.remove('show');posSlider.value=0;posDist.textContent='0.0km';posEle.textContent='0m';updateUI(null);drawElevation(tracks);setStatus('クリアしました。')});window.addEventListener('resize',()=>{setTimeout(()=>{map.invalidateSize();drawElevation(tracks,currentDistance)},100)});drawElevation(tracks);
 })();
 </script>
 </body>
