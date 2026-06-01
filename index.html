@@ -108,8 +108,12 @@ function updateCurrentPositionFromSlider(){
     currentMarker.setLatLng([p.lat,p.lon]);
   }
 
-  // 現在位置の赤丸を常に地図中央付近へ追従
-  map.panTo([p.lat,p.lon],{animate:false});
+  // 現在位置の赤丸を地図エリアの中央、縦50%・横50%に固定する
+  const currentPoint=map.latLngToContainerPoint([p.lat,p.lon]);
+  const mapSize=map.getSize();
+  const targetPoint=L.point(mapSize.x*0.5,mapSize.y*0.5);
+  const panOffset=currentPoint.subtract(targetPoint);
+  map.panBy(panOffset,{animate:false});
 
   posDist.textContent=(p.dist/1000).toFixed(1)+'km';
   posEle.textContent=Math.round(p.ele)+'m';
