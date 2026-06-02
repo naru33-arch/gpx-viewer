@@ -36,6 +36,25 @@ function showToast(msg){const t=document.getElementById('toast');t.textContent=m
 function fmtDist(m){return m>=1000?(m/1000).toFixed(2)+' km':Math.round(m)+' m'}
 function haversine(a,b){const R=6371000,r=Math.PI/180,dLat=(b.lat-a.lat)*r,dLon=(b.lon-a.lon)*r,s=Math.sin(dLat/2)**2+Math.cos(a.lat*r)*Math.cos(b.lat*r)*Math.sin(dLon/2)**2;return R*2*Math.atan2(Math.sqrt(s),Math.sqrt(1-s))}
 function enrichPoints(pts){let dist=0;return pts.map((p,i)=>{if(i>0)dist+=haversine(pts[i-1],p);return {...p,dist:Number.isFinite(p.distance)?p.distance:dist}})}
+
+function normalizeDistances(pts){
+  if(!pts||!pts.length)return [];
+  const hasDistance=pts.some(p=>Number.isFinite(p.distance)&&p.distance>0);
+  if(hasDistance){
+    let last=0;
+    return pts.map((p,i)=>{
+      let d=Number.isFinite(p.distance)?p.distance:last;
+      if(i>0&&d<last)d=last;
+      last=d;
+      return {...p,dist:d};
+    });
+  }
+  let dist=0;
+  return pts.map((p,i)=>{
+    if(i>0)dist+=haversine(pts[i-1],p);
+    return {...p,dist};
+  });
+}
 function calcStats(pts){let dist=pts.length?pts[pts.length-1].dist:0,gain=0;for(let i=1;i<pts.length;i++){const d=pts[i].ele-pts[i-1].ele;if(d>0)gain+=d}return{dist,gain}}
 function simplifyPoints(points,maxPoints){if(!points||points.length<=maxPoints)return points;const step=Math.ceil(points.length/maxPoints),out=[];for(let i=0;i<points.length;i+=step)out.push(points[i]);const last=points[points.length-1];if(out[out.length-1]!==last)out.push(last);return out}
 function prepareCanvas(canvas){const rect=canvas.getBoundingClientRect(),dpr=window.devicePixelRatio||1;canvas.width=Math.max(1,Math.round(rect.width*dpr));canvas.height=Math.max(1,Math.round(rect.height*dpr));const ctx=canvas.getContext('2d');ctx.setTransform(dpr,0,0,dpr,0,0);return{ctx,width:rect.width,height:rect.height}}
