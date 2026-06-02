@@ -38,11 +38,55 @@ header{position:relative;display:flex;align-items:center;gap:8px;padding:8px 16p
 .viewer{flex:1;min-height:0;display:grid;grid-template-rows:72% 28%;overflow:hidden}.map-wrap{position:relative;min-height:0;background:#1a1a2e;border-bottom:1px solid #0f3460}#map{width:100%;height:100%}.elevation-wrap{position:relative;min-height:0;background:#111827}#elevationCanvas{width:100%;height:100%;display:block}
 .toast{position:fixed;top:80px;left:50%;transform:translateX(-50%);background:rgba(255,107,107,.95);color:#fff;padding:10px 18px;border-radius:8px;font-size:13px;z-index:9999;display:none;max-width:90vw;text-align:center}.leaflet-container{background:#1a1a2e!important}.leaflet-control-zoom a{background:#16213e!important;color:#e6edf3!important;border-color:#0f3460!important;width:30px!important;height:30px!important;line-height:30px!important}.leaflet-control-attribution{background:rgba(22,33,62,.82)!important;color:#7d8590!important;font-size:9px!important}.leaflet-control-attribution a{color:#7d8590!important}
 .controls{flex-shrink:0;background:#111827;border-top:1px solid #0f3460;padding:8px 16px calc(8px + env(safe-area-inset-bottom));display:flex;gap:8px;align-items:center;flex-wrap:wrap;visibility:hidden;opacity:0;pointer-events:none}.controls.show{visibility:visible;opacity:1;pointer-events:auto}.play-btn{width:38px;height:34px;border-radius:999px;border:1px solid #1a5276;background:#0f3460;color:#e6edf3;font-size:15px;font-weight:800;display:flex;align-items:center;justify-content:center;cursor:pointer;-webkit-appearance:none;appearance:none}.play-btn.playing{background:#0078ff;color:#fff;border-color:#0078ff}#posSlider{flex:1 1 180px;min-width:140px;accent-color:#0078ff}.pos-info{min-width:96px;text-align:right;font-size:12px;color:#e6edf3;font-variant-numeric:tabular-nums;line-height:1.25}.pos-info span{color:#0078ff;font-weight:700}.selects{display:flex;gap:6px;width:100%;align-items:center}.selects select{background:#0f3460;color:#e6edf3;border:1px solid #1a5276;border-radius:6px;padding:6px 8px;font-size:12px}.legend{margin-left:auto;font-size:10px;color:#7d8590;white-space:nowrap}
+
+.tile-control{
+  position:absolute;
+  top:10px;
+  right:10px;
+  z-index:1000;
+  display:flex;
+  flex-direction:column;
+  gap:4px;
+  background:rgba(22,33,62,.88);
+  border:1px solid #0f3460;
+  border-radius:8px;
+  padding:6px;
+  -webkit-backdrop-filter:blur(6px);
+  backdrop-filter:blur(6px);
+}
+.tile-control button{
+  min-width:74px;
+  padding:5px 7px;
+  border-radius:6px;
+  border:1px solid #1a5276;
+  background:#0f3460;
+  color:#7d8590;
+  font-size:10px;
+  font-family:inherit;
+  cursor:pointer;
+  -webkit-appearance:none;
+  appearance:none;
+}
+.tile-control button.active{
+  color:#fff;
+  background:#0078ff;
+  border-color:#0078ff;
+}
+
 </style>
 </head>
 <body>
 <header><div class="logo">GPX//VIEWER</div><input type="file" id="fileInput" accept=".gpx,.tcx,*/*"><div class="stats" id="statsWrap" style="display:none"><div class="stat file-stat"><div class="stat-label">ファイル名</div><div class="stat-value" id="sName">—</div></div><div class="stat"><div class="stat-label">距離</div><div class="stat-value hi" id="sDist">—</div></div><div class="stat"><div class="stat-label">獲得標高</div><div class="stat-value" id="sEle">—</div></div></div><button class="clear-btn" id="clearBtn" style="display:none">✕</button></header>
-<div class="viewer"><div class="map-wrap"><div id="map"></div></div><div class="elevation-wrap"><canvas id="elevationCanvas"></canvas></div></div>
+<div class="viewer"><div class="map-wrap">
+    <div id="map"></div>
+    <div class="tile-control" id="tileControl">
+      <button type="button" data-tile="gsi_std" class="active">地理院 標準</button>
+      <button type="button" data-tile="gsi_pale">地理院 淡色</button>
+      <button type="button" data-tile="gsi_photo">地理院 写真</button>
+      <button type="button" data-tile="osm">OSM</button>
+      <button type="button" data-tile="opentopo">Topo</button>
+    </div>
+  </div><div class="elevation-wrap"><canvas id="elevationCanvas"></canvas></div></div>
 <div class="controls" id="controls"><button class="play-btn" id="playBtn" type="button">▶</button><input type="range" id="posSlider" min="0" max="1000" value="0"><div class="pos-info"><span id="posDist">0.0km</span><br><span id="posEle">0m</span></div><div class="selects"><select id="speedSelect">
       <option value="0.5">0.5x</option>
       <option value="1" selected>1x</option>
@@ -56,7 +100,38 @@ const fileInput=document.getElementById('fileInput'),elevationCanvas=document.ge
 let tracks=[],mapLayers=[],currentMarker=null,currentDistance=0,playTimer=null,isPlaying=false,playStartReal=0,playStartActivity=0,allBounds=null;
 const DEFAULT_COLOR='#0078ff';
 const map=L.map('map',{center:[36.2,138.2],zoom:5,zoomControl:true,attributionControl:true});
-L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/std/{z}/{x}/{y}.png',{attribution:'<a href="https://maps.gsi.go.jp/development/ichiran.html">国土地理院</a>',maxZoom:18}).addTo(map);
+const TILE_DEFS={
+  gsi_std:{
+    url:'https://cyberjapandata.gsi.go.jp/xyz/std/{z}/{x}/{y}.png',
+    options:{attribution:'<a href="https://maps.gsi.go.jp/development/ichiran.html">国土地理院</a>',maxZoom:18}
+  },
+  gsi_pale:{
+    url:'https://cyberjapandata.gsi.go.jp/xyz/pale/{z}/{x}/{y}.png',
+    options:{attribution:'<a href="https://maps.gsi.go.jp/development/ichiran.html">国土地理院</a>',maxZoom:18}
+  },
+  gsi_photo:{
+    url:'https://cyberjapandata.gsi.go.jp/xyz/seamlessphoto/{z}/{x}/{y}.jpg',
+    options:{attribution:'<a href="https://maps.gsi.go.jp/development/ichiran.html">国土地理院</a>',maxZoom:18}
+  },
+  osm:{
+    url:'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+    options:{attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',maxZoom:19}
+  },
+  opentopo:{
+    url:'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
+    options:{attribution:'&copy; OpenStreetMap contributors, SRTM | &copy; <a href="https://opentopomap.org">OpenTopoMap</a>',maxZoom:17}
+  }
+};
+let currentTileLayer=null;
+function setBaseTile(key){
+  const def=TILE_DEFS[key]||TILE_DEFS.gsi_std;
+  if(currentTileLayer)map.removeLayer(currentTileLayer);
+  currentTileLayer=L.tileLayer(def.url,def.options).addTo(map);
+  document.querySelectorAll('#tileControl button').forEach(btn=>{
+    btn.classList.toggle('active',btn.dataset.tile===key);
+  });
+}
+setBaseTile('gsi_std');
 function showToast(msg){const t=document.getElementById('toast');t.textContent=msg;t.style.display='block';setTimeout(()=>{t.style.display='none'},4000)}
 function fmtDist(m){return m>=1000?(m/1000).toFixed(2)+' km':Math.round(m)+' m'}
 function haversine(a,b){const R=6371000,r=Math.PI/180,dLat=(b.lat-a.lat)*r,dLon=(b.lon-a.lon)*r,s=Math.sin(dLat/2)**2+Math.cos(a.lat*r)*Math.cos(b.lat*r)*Math.sin(dLon/2)**2;return R*2*Math.atan2(Math.sqrt(s),Math.sqrt(1-s))}
@@ -270,6 +345,7 @@ function startPlayback(){
 }
 function togglePlayback(){if(isPlaying)stopPlayback();else startPlayback()}
 function loadFile(file){stopPlayback();const lower=file.name.toLowerCase();if(!lower.endsWith('.gpx')&&!lower.endsWith('.tcx')){showToast(`${file.name} はGPX/TCXファイルではありません`);return}const reader=new FileReader();reader.onload=e=>{try{const parsed=lower.endsWith('.tcx')?parseTCX(e.target.result):parseGPX(e.target.result);let points=enrichSpeed(parsed.points);if(points.length<2){showToast(`${file.name}: トラックポイントが見つかりませんでした`);return}const {dist,gain}=calcStats(points),times=points.map(p=>p.time).filter(v=>Number.isFinite(v)),hasTime=(parsed.type==='tcx'&&times.length>=2),startTime=hasTime?times[0]:null,endTime=hasTime?times[times.length-1]:null,elapsed=hasTime?(endTime-startTime)/1000:0,track={name:parsed.name,points,dist,gain,type:parsed.type,hasTime,startTime,endTime,elapsed};mapLayers.forEach(layer=>map.removeLayer(layer));tracks=[];mapLayers=[];allBounds=null;currentMarker=null;currentDistance=0;tracks.push(track);addTrackToMap(track);controls.classList.add('show');posSlider.value=0;updateUI(track);updateLegend();updateCurrentPositionFromSlider()}catch(err){console.error(err);showToast(`読み込みエラー: ${err.message}`)}};reader.onerror=()=>showToast(`${file.name}: 読み込みに失敗しました`);reader.readAsText(file,'UTF-8')}
+document.querySelectorAll('#tileControl button').forEach(btn=>btn.addEventListener('click',()=>setBaseTile(btn.dataset.tile)));
 posSlider.addEventListener('input',()=>{stopPlayback();updateCurrentPositionFromSlider()});playBtn.addEventListener('click',togglePlayback);speedSelect.addEventListener('change',()=>{if(isPlaying)startPlayback()});colorMode.addEventListener('change',()=>{updateLegend();redrawMapTracks();updateCurrentPositionFromSlider()});fileInput.addEventListener('change',e=>{const file=e.target.files&&e.target.files[0];if(file)loadFile(file);e.target.value=''});clearBtn.addEventListener('click',()=>{stopPlayback();mapLayers.forEach(layer=>map.removeLayer(layer));tracks=[];mapLayers=[];currentMarker=null;allBounds=null;controls.classList.remove('show');statsWrap.style.display='none';clearBtn.style.display='none';posSlider.value=0;posDist.textContent='0.0km';posEle.textContent='0m';drawElevation(tracks)});window.addEventListener('resize',()=>setTimeout(()=>{map.invalidateSize();drawElevation(tracks,currentDistance)},100));drawElevation(tracks);
 })();
 </script></body></html>
