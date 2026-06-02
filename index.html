@@ -23,7 +23,7 @@ header{display:flex;align-items:center;gap:8px;padding:10px 16px;padding-top:cal
 <body>
 <header><div class="logo">GPX//VIEWER</div><input type="file" id="fileInput" accept=".gpx,.tcx,*/*"><div class="stats" id="statsWrap" style="display:none"><div class="stat file-stat"><div class="stat-label">ファイル名</div><div class="stat-value" id="sName">—</div></div><div class="stat"><div class="stat-label">距離</div><div class="stat-value hi" id="sDist">—</div></div><div class="stat"><div class="stat-label">獲得標高</div><div class="stat-value" id="sEle">—</div></div></div><button class="clear-btn" id="clearBtn" style="display:none">クリア</button></header>
 <div class="viewer"><div class="map-wrap"><div id="map"></div></div><div class="elevation-wrap"><canvas id="elevationCanvas"></canvas></div></div>
-<div class="controls" id="controls"><button class="play-btn" id="playBtn" type="button">▶</button><input type="range" id="posSlider" min="0" max="1000" value="0"><div class="pos-info"><span id="posDist">0.0km</span><br><span id="posEle">0m</span></div><div class="selects"><select id="speedSelect"><option value="1">1x</option><option value="10" selected>10x</option><option value="30">30x</option><option value="60">60x</option></select><select id="colorMode"><option value="single">単色</option><option value="run">ラン（ペース）</option><option value="trail" selected>トレラン（速度）</option><option value="hr">心拍</option></select><div class="legend" id="legend">青=速い / 赤=遅い</div></div></div>
+<div class="controls" id="controls"><button class="play-btn" id="playBtn" type="button">▶</button><input type="range" id="posSlider" min="0" max="1000" value="0"><div class="pos-info"><span id="posDist">0.0km</span><br><span id="posEle">0m</span></div><div class="selects"><select id="speedSelect"><option value="0.5">0.5x</option><option value="1" selected>1x</option><option value="2">2x</option><option value="4">4x</option></select><select id="colorMode"><option value="single">単色</option><option value="run">ラン（ペース）</option><option value="trail" selected>トレラン（速度）</option><option value="hr">心拍</option></select><div class="legend" id="legend">1x=30秒再生</div></div></div>
 <div class="toast" id="toast"></div>
 <script>
 (function(){
@@ -181,19 +181,68 @@ function updateUI(last){const has=tracks.length>0;statsWrap.style.display=has?'f
 function updateLegend(){
   const trackType=tracks[0]?.type||'gpx';
   if(trackType==='gpx'){
-    legend.textContent='GPXは青単色表示';
+    legend.textContent='GPXは青単色 / 1x=30秒';
     return;
   }
   const m=colorMode.value;
-  if(m==='hr')legend.textContent='心拍: 青<120 緑<140 黄<155 赤';
-  else if(m==='run')legend.textContent='ペース: 青速い 緑 黄 赤遅い';
-  else if(m==='trail')legend.textContent='速度: 青8+ 緑5+ 黄2+ 赤';
-  else legend.textContent='単色表示';
+  if(m==='hr')legend.textContent='心拍: 青<120 緑<140 黄<155 赤 / 1x=30秒';
+  else if(m==='run')legend.textContent='ペース: 青速い 緑 黄 赤遅い / 1x=30秒';
+  else if(m==='trail')legend.textContent='速度: 青8+ 緑5+ 黄2+ 赤 / 1x=30秒';
+  else legend.textContent='単色表示 / 1x=30秒';
 }
 function updateCurrentPosition(p){if(!p)return;const c=getColorByPoint(p);if(!currentMarker){currentMarker=L.marker([p.lat,p.lon],{icon:makeCurrentIcon('#ff2d55'),zIndexOffset:1000}).addTo(map);mapLayers.push(currentMarker)}else{currentMarker.setIcon(makeCurrentIcon('#ff2d55'));currentMarker.setLatLng([p.lat,p.lon])}const currentPoint=map.latLngToContainerPoint([p.lat,p.lon]),mapSize=map.getSize(),targetPoint=L.point(mapSize.x*.5,mapSize.y*.5),panOffset=currentPoint.subtract(targetPoint);map.panBy(panOffset,{animate:false});currentDistance=p.dist||0;posDist.textContent=(currentDistance/1000).toFixed(1)+'km';posEle.textContent=Math.round(p.ele)+'m';drawElevation(tracks,currentDistance)}
-function updateCurrentPositionFromSlider(){const t=tracks[0];if(!t)return;if(t.hasTime){const elapsed=t.elapsed*(Number(posSlider.value)/1000);updateCurrentPosition(getPointAtElapsed(elapsed))}else{const total=getTotalDistance();updateCurrentPosition(getPointAtDistance(total*(Number(posSlider.value)/1000)))}}
+function updateCurrentPositionByProgress(progress){
+  const t=tracks[0];
+  if(!t)return;
+
+  progress=Math.max(0,Math.min(1,progress));
+
+  if(t.hasTime){
+    const elapsed=t.elapsed*progress;
+    updateCurrentPosition(getPointAtElapsed(elapsed));
+  }else{
+    const total=getTotalDistance();
+    updateCurrentPosition(getPointAtDistance(total*progress));
+  }
+}
+
+function updateCurrentPositionFromSlider(){
+  updateCurrentPositionByProgress(Number(posSlider.value)/1000);
+}
 function setPlaying(on){isPlaying=on;playBtn.textContent=on?'⏸':'▶';playBtn.classList.toggle('playing',on)}function stopPlayback(){if(playTimer){clearInterval(playTimer);playTimer=null}setPlaying(false)}
-function startPlayback(){if(!tracks.length)return;stopPlayback();setPlaying(true);const t=tracks[0],speed=Number(speedSelect.value)||10;playStartReal=Date.now();playStartActivity=t.hasTime?t.elapsed*(Number(posSlider.value)/1000):getTotalDistance()*(Number(posSlider.value)/1000);playTimer=setInterval(()=>{const delta=((Date.now()-playStartReal)/1000)*speed;if(t.hasTime){let elapsed=playStartActivity+delta;if(elapsed>=t.elapsed){elapsed=t.elapsed;posSlider.value=1000;updateCurrentPosition(getPointAtElapsed(elapsed));stopPlayback();return}posSlider.value=Math.round((elapsed/t.elapsed)*1000);updateCurrentPosition(getPointAtElapsed(elapsed))}else{const total=getTotalDistance();let d=playStartActivity+delta*20;if(d>=total){d=total;posSlider.value=1000;updateCurrentPosition(getPointAtDistance(d));stopPlayback();return}posSlider.value=Math.round((d/total)*1000);updateCurrentPosition(getPointAtDistance(d))}},80)}function togglePlayback(){if(isPlaying)stopPlayback();else startPlayback()}
+function startPlayback(){
+  if(!tracks.length)return;
+  stopPlayback();
+  setPlaying(true);
+
+  // 1x = 全コース30秒で再生。
+  // 0.5x = 60秒、2x = 15秒、4x = 7.5秒。
+  // TCXは実際のTime比率を保ったまま30秒へ圧縮。
+  // GPXは距離比率で30秒再生。
+  const speed=Number(speedSelect.value)||1;
+  const replayDurationMs=30000/speed;
+
+  const startSlider=Number(posSlider.value)||0;
+  const startProgress=startSlider/1000;
+  const startReal=Date.now();
+
+  playTimer=setInterval(()=>{
+    const elapsedReal=Date.now()-startReal;
+    let progress=startProgress+(elapsedReal/replayDurationMs)*(1-startProgress);
+
+    if(progress>=1){
+      progress=1;
+      posSlider.value=1000;
+      updateCurrentPositionByProgress(progress);
+      stopPlayback();
+      return;
+    }
+
+    posSlider.value=Math.round(progress*1000);
+    updateCurrentPositionByProgress(progress);
+  },50);
+}
+function togglePlayback(){if(isPlaying)stopPlayback();else startPlayback()}
 function loadFile(file){stopPlayback();const lower=file.name.toLowerCase();if(!lower.endsWith('.gpx')&&!lower.endsWith('.tcx')){showToast(`${file.name} はGPX/TCXファイルではありません`);return}const reader=new FileReader();reader.onload=e=>{try{const parsed=lower.endsWith('.tcx')?parseTCX(e.target.result):parseGPX(e.target.result);let points=enrichSpeed(parsed.points);if(points.length<2){showToast(`${file.name}: トラックポイントが見つかりませんでした`);return}const {dist,gain}=calcStats(points),times=points.map(p=>p.time).filter(v=>Number.isFinite(v)),hasTime=times.length>=2,startTime=hasTime?times[0]:null,endTime=hasTime?times[times.length-1]:null,elapsed=hasTime?(endTime-startTime)/1000:0,track={name:parsed.name,points,dist,gain,type:parsed.type,hasTime,startTime,endTime,elapsed};mapLayers.forEach(layer=>map.removeLayer(layer));tracks=[];mapLayers=[];allBounds=null;currentMarker=null;currentDistance=0;tracks.push(track);addTrackToMap(track);controls.classList.add('show');posSlider.value=0;updateUI(track);updateLegend();updateCurrentPositionFromSlider()}catch(err){console.error(err);showToast(`読み込みエラー: ${err.message}`)}};reader.onerror=()=>showToast(`${file.name}: 読み込みに失敗しました`);reader.readAsText(file,'UTF-8')}
 posSlider.addEventListener('input',()=>{stopPlayback();updateCurrentPositionFromSlider()});playBtn.addEventListener('click',togglePlayback);speedSelect.addEventListener('change',()=>{if(isPlaying)startPlayback()});colorMode.addEventListener('change',()=>{updateLegend();redrawMapTracks();updateCurrentPositionFromSlider()});fileInput.addEventListener('change',e=>{const file=e.target.files&&e.target.files[0];if(file)loadFile(file);e.target.value=''});clearBtn.addEventListener('click',()=>{stopPlayback();mapLayers.forEach(layer=>map.removeLayer(layer));tracks=[];mapLayers=[];currentMarker=null;allBounds=null;controls.classList.remove('show');statsWrap.style.display='none';clearBtn.style.display='none';posSlider.value=0;posDist.textContent='0.0km';posEle.textContent='0m';drawElevation(tracks)});window.addEventListener('resize',()=>setTimeout(()=>{map.invalidateSize();drawElevation(tracks,currentDistance)},100));drawElevation(tracks);
 })();
