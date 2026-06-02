@@ -134,7 +134,43 @@ function enrichSpeed(pts){for(let i=0;i<pts.length;i++){if(i===0){pts[i].speedKm
 function makeMarker(color,label){return L.divIcon({className:'',html:`<div style="width:24px;height:24px;border-radius:50%;background:${color};border:2px solid #1a1a2e;color:#1a1a2e;font-weight:800;font-size:12px;display:flex;align-items:center;justify-content:center;box-shadow:0 0 0 2px ${color}66;">${label}</div>`,iconSize:[24,24],iconAnchor:[12,12]})}
 function makeCurrentIcon(color='#ff2d55'){return L.divIcon({className:'',html:`<div style="width:22px;height:22px;border-radius:50%;background:${color};border:3px solid #fff;box-shadow:0 0 0 2px ${color}66,0 2px 8px rgba(0,0,0,.35);"></div>`,iconSize:[22,22],iconAnchor:[11,11]})}
 function getTotalDistance(){return tracks.reduce((s,t)=>s+(t.dist||0),0)}
-function getColorByPoint(p){const mode=colorMode.value;if(mode==='single')return DEFAULT_COLOR;if(mode==='hr'){const hr=p.hr;if(!Number.isFinite(hr))return '#888';if(hr<120)return '#2f80ed';if(hr<140)return '#27ae60';if(hr<155)return '#f2c94c';return '#eb5757'}const speed=p.speedKmh;if(mode==='trail'){if(!Number.isFinite(speed))return DEFAULT_COLOR;if(speed>=8)return '#2f80ed';if(speed>=5)return '#27ae60';if(speed>=2)return '#f2c94c';return '#eb5757'}if(mode==='run'){if(!Number.isFinite(speed)||speed<=0)return '#eb5757';const pace=60/speed;if(pace<=4.5)return '#2f80ed';if(pace<=5.5)return '#27ae60';if(pace<=7.0)return '#f2c94c';return '#eb5757'}return DEFAULT_COLOR}
+function getColorByPoint(p){
+  const trackType=tracks[0]?.type||'gpx';
+  if(trackType==='gpx')return DEFAULT_COLOR;
+
+  const mode=colorMode.value;
+  if(mode==='single')return DEFAULT_COLOR;
+
+  if(mode==='hr'){
+    const hr=p.hr;
+    if(!Number.isFinite(hr))return DEFAULT_COLOR;
+    if(hr<120)return '#2f80ed';
+    if(hr<140)return '#27ae60';
+    if(hr<155)return '#f2c94c';
+    return '#eb5757';
+  }
+
+  const speed=p.speedKmh;
+
+  if(mode==='trail'){
+    if(!Number.isFinite(speed))return DEFAULT_COLOR;
+    if(speed>=8)return '#2f80ed';
+    if(speed>=5)return '#27ae60';
+    if(speed>=2)return '#f2c94c';
+    return '#eb5757';
+  }
+
+  if(mode==='run'){
+    if(!Number.isFinite(speed)||speed<=0)return '#eb5757';
+    const pace=60/speed;
+    if(pace<=4.5)return '#2f80ed';
+    if(pace<=5.5)return '#27ae60';
+    if(pace<=7.0)return '#f2c94c';
+    return '#eb5757';
+  }
+
+  return DEFAULT_COLOR;
+}
 function getPointAtDistance(targetDist){if(!tracks.length)return null;let offset=0;for(const t of tracks){const pts=t.points;if(targetDist<=offset+(t.dist||0)){const local=targetDist-offset;for(let i=1;i<pts.length;i++){const a=pts[i-1],b=pts[i];if(local<=b.dist){const seg=b.dist-a.dist||1,r=Math.max(0,Math.min(1,(local-a.dist)/seg));return{lat:a.lat+(b.lat-a.lat)*r,lon:a.lon+(b.lon-a.lon)*r,ele:a.ele+(b.ele-a.ele)*r,dist:targetDist,hr:b.hr,speedKmh:b.speedKmh,time:b.time}}}return{...pts[pts.length-1],dist:targetDist}}offset+=t.dist||0}const lt=tracks[tracks.length-1],last=lt.points[lt.points.length-1];return{...last,dist:getTotalDistance()}}
 function getPointAtElapsed(elapsedSec){const t=tracks[0];if(!t||!t.hasTime)return getPointAtDistance(getTotalDistance()*(Number(posSlider.value)/1000));const target=t.startTime+elapsedSec*1000,pts=t.points;for(let i=1;i<pts.length;i++){const a=pts[i-1],b=pts[i];if(Number.isFinite(a.time)&&Number.isFinite(b.time)&&target<=b.time){const dt=b.time-a.time||1,r=Math.max(0,Math.min(1,(target-a.time)/dt));return{lat:a.lat+(b.lat-a.lat)*r,lon:a.lon+(b.lon-a.lon)*r,ele:a.ele+(b.ele-a.ele)*r,dist:a.dist+(b.dist-a.dist)*r,hr:b.hr,speedKmh:b.speedKmh,time:target}}}return{...pts[pts.length-1]}}
 function drawColoredTrack(track){const pts=simplifyPoints(track.points,7000);let seg=[],lastColor=null;const flush=()=>{if(seg.length>=2){const poly=L.polyline(seg,{color:lastColor||DEFAULT_COLOR,weight:5,opacity:.95,lineJoin:'round',lineCap:'round'}).addTo(map);mapLayers.push(poly);const b=poly.getBounds();allBounds=allBounds?allBounds.extend(b):b}seg=[]};for(let i=0;i<pts.length;i++){const p=pts[i],c=getColorByPoint(p);if(lastColor===null){lastColor=c;seg.push([p.lat,p.lon]);continue}if(c!==lastColor){seg.push([p.lat,p.lon]);flush();lastColor=c;seg=[[p.lat,p.lon]]}else seg.push([p.lat,p.lon])}flush()}
@@ -142,8 +178,19 @@ function addTrackToMap(track){drawColoredTrack(track);const start=track.points[0
 function redrawMapTracks(){const keep=currentMarker;mapLayers.forEach(layer=>{if(layer!==keep)map.removeLayer(layer)});mapLayers=keep?[keep]:[];allBounds=null;tracks.forEach(addTrackToMap)}
 function drawElevation(trackList,markerDist=null){const {ctx,width,height}=prepareCanvas(elevationCanvas);ctx.clearRect(0,0,width,height);ctx.fillStyle='#111827';ctx.fillRect(0,0,width,height);ctx.fillStyle='#7d8590';ctx.font='10px -apple-system, Helvetica Neue, Arial, sans-serif';ctx.textAlign='left';ctx.textBaseline='top';ctx.fillText('ELEVATION PROFILE',12,8);if(!trackList.length){ctx.font='13px -apple-system, Helvetica Neue, Arial, sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText('GPX / TCXを読み込むと高低図を表示します',width/2,height/2);return}const padL=48,padR=16,padT=28,padB=48,plotW=Math.max(1,width-padL-padR),plotH=Math.max(1,height-padT-padB);let minEle=Infinity,maxEle=-Infinity,eleCount=0,totalDist=0;for(const t of trackList){totalDist+=t.dist||0;for(const p of t.points){if(Number.isFinite(p.ele)){if(p.ele<minEle)minEle=p.ele;if(p.ele>maxEle)maxEle=p.ele;eleCount++}}}if(eleCount<2||totalDist<=0)return;if(maxEle-minEle<1){maxEle+=.5;minEle-=.5}const eleRange=maxEle-minEle,minGrid=Math.floor(minEle/100)*100,maxGrid=Math.ceil(maxEle/100)*100;for(let ele=minGrid;ele<=maxGrid;ele+=100){const y=padT+((maxEle-ele)/eleRange)*plotH;ctx.strokeStyle=(ele%200===0)?'rgba(125,133,144,.35)':'rgba(125,133,144,.18)';ctx.beginPath();ctx.moveTo(padL,y);ctx.lineTo(width-padR,y);ctx.stroke();ctx.fillStyle='#7d8590';ctx.textAlign='right';ctx.textBaseline='middle';ctx.fillText(ele+'m',padL-6,y)}const totalKm=totalDist/1000,kmStep=totalKm<=50?5:(totalKm<=100?10:20);for(let km=0;km<=totalKm;km+=kmStep){const x=padL+((km*1000)/totalDist)*plotW;ctx.strokeStyle=(km%(kmStep*2)===0)?'rgba(125,133,144,.35)':'rgba(125,133,144,.18)';ctx.beginPath();ctx.moveTo(x,padT);ctx.lineTo(x,padT+plotH);ctx.stroke();ctx.save();ctx.translate(x,height-padB+36);ctx.rotate(-Math.PI/2);ctx.textAlign='left';ctx.textBaseline='middle';ctx.fillStyle='#7d8590';ctx.fillText(km+'km',0,0);ctx.restore()}let distOffset=0;for(const t of trackList){const pts=simplifyPoints(t.points,5000);ctx.beginPath();pts.forEach((p,i)=>{const x=padL+((distOffset+p.dist)/totalDist)*plotW,y=padT+((maxEle-p.ele)/eleRange)*plotH;if(i===0)ctx.moveTo(x,y);else ctx.lineTo(x,y)});ctx.strokeStyle=DEFAULT_COLOR;ctx.lineWidth=2.2;ctx.lineJoin='round';ctx.lineCap='round';ctx.stroke();distOffset+=t.dist}if(markerDist!==null&&totalDist>0){const mx=padL+(markerDist/totalDist)*plotW;ctx.strokeStyle='#ff2d55';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(mx,padT);ctx.lineTo(mx,padT+plotH);ctx.stroke();const p=getPointAtDistance(markerDist);if(p){const my=padT+((maxEle-p.ele)/eleRange)*plotH;ctx.beginPath();ctx.arc(mx,my,4,0,Math.PI*2);ctx.fillStyle='#ff2d55';ctx.fill();ctx.strokeStyle='#fff';ctx.lineWidth=1.5;ctx.stroke()}}}
 function updateUI(last){const has=tracks.length>0;statsWrap.style.display=has?'flex':'none';clearBtn.style.display=has?'':'none';if(!has)return;const totalDist=tracks.reduce((s,t)=>s+t.dist,0),totalGain=tracks.reduce((s,t)=>s+t.gain,0);document.getElementById('sName').textContent=last?last.name:tracks[tracks.length-1].name;document.getElementById('sDist').textContent=fmtDist(totalDist);document.getElementById('sEle').textContent=Math.round(totalGain)+' m'}
-function updateLegend(){const m=colorMode.value;if(m==='hr')legend.textContent='心拍: 青<120 緑<140 黄<155 赤';else if(m==='run')legend.textContent='ペース: 青速い 緑 黄 赤遅い';else if(m==='trail')legend.textContent='速度: 青8+ 緑5+ 黄2+ 赤';else legend.textContent='単色表示'}
-function updateCurrentPosition(p){if(!p)return;const c=getColorByPoint(p);if(!currentMarker){currentMarker=L.marker([p.lat,p.lon],{icon:makeCurrentIcon(c),zIndexOffset:1000}).addTo(map);mapLayers.push(currentMarker)}else{currentMarker.setIcon(makeCurrentIcon(c));currentMarker.setLatLng([p.lat,p.lon])}const currentPoint=map.latLngToContainerPoint([p.lat,p.lon]),mapSize=map.getSize(),targetPoint=L.point(mapSize.x*.5,mapSize.y*.5),panOffset=currentPoint.subtract(targetPoint);map.panBy(panOffset,{animate:false});currentDistance=p.dist||0;posDist.textContent=(currentDistance/1000).toFixed(1)+'km';posEle.textContent=Math.round(p.ele)+'m';drawElevation(tracks,currentDistance)}
+function updateLegend(){
+  const trackType=tracks[0]?.type||'gpx';
+  if(trackType==='gpx'){
+    legend.textContent='GPXは青単色表示';
+    return;
+  }
+  const m=colorMode.value;
+  if(m==='hr')legend.textContent='心拍: 青<120 緑<140 黄<155 赤';
+  else if(m==='run')legend.textContent='ペース: 青速い 緑 黄 赤遅い';
+  else if(m==='trail')legend.textContent='速度: 青8+ 緑5+ 黄2+ 赤';
+  else legend.textContent='単色表示';
+}
+function updateCurrentPosition(p){if(!p)return;const c=getColorByPoint(p);if(!currentMarker){currentMarker=L.marker([p.lat,p.lon],{icon:makeCurrentIcon('#ff2d55'),zIndexOffset:1000}).addTo(map);mapLayers.push(currentMarker)}else{currentMarker.setIcon(makeCurrentIcon('#ff2d55'));currentMarker.setLatLng([p.lat,p.lon])}const currentPoint=map.latLngToContainerPoint([p.lat,p.lon]),mapSize=map.getSize(),targetPoint=L.point(mapSize.x*.5,mapSize.y*.5),panOffset=currentPoint.subtract(targetPoint);map.panBy(panOffset,{animate:false});currentDistance=p.dist||0;posDist.textContent=(currentDistance/1000).toFixed(1)+'km';posEle.textContent=Math.round(p.ele)+'m';drawElevation(tracks,currentDistance)}
 function updateCurrentPositionFromSlider(){const t=tracks[0];if(!t)return;if(t.hasTime){const elapsed=t.elapsed*(Number(posSlider.value)/1000);updateCurrentPosition(getPointAtElapsed(elapsed))}else{const total=getTotalDistance();updateCurrentPosition(getPointAtDistance(total*(Number(posSlider.value)/1000)))}}
 function setPlaying(on){isPlaying=on;playBtn.textContent=on?'⏸':'▶';playBtn.classList.toggle('playing',on)}function stopPlayback(){if(playTimer){clearInterval(playTimer);playTimer=null}setPlaying(false)}
 function startPlayback(){if(!tracks.length)return;stopPlayback();setPlaying(true);const t=tracks[0],speed=Number(speedSelect.value)||10;playStartReal=Date.now();playStartActivity=t.hasTime?t.elapsed*(Number(posSlider.value)/1000):getTotalDistance()*(Number(posSlider.value)/1000);playTimer=setInterval(()=>{const delta=((Date.now()-playStartReal)/1000)*speed;if(t.hasTime){let elapsed=playStartActivity+delta;if(elapsed>=t.elapsed){elapsed=t.elapsed;posSlider.value=1000;updateCurrentPosition(getPointAtElapsed(elapsed));stopPlayback();return}posSlider.value=Math.round((elapsed/t.elapsed)*1000);updateCurrentPosition(getPointAtElapsed(elapsed))}else{const total=getTotalDistance();let d=playStartActivity+delta*20;if(d>=total){d=total;posSlider.value=1000;updateCurrentPosition(getPointAtDistance(d));stopPlayback();return}posSlider.value=Math.round((d/total)*1000);updateCurrentPosition(getPointAtDistance(d))}},80)}function togglePlayback(){if(isPlaying)stopPlayback();else startPlayback()}
