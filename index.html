@@ -12,7 +12,7 @@
 html,body{height:100%;height:-webkit-fill-available}
 body{font-family:-apple-system,'Helvetica Neue',Arial,sans-serif;background:#1a1a2e;color:#e6edf3;display:flex;flex-direction:column;overflow:hidden;padding-bottom:env(safe-area-inset-bottom)}
 header{position:relative;display:flex;align-items:center;gap:8px;padding:8px 16px;padding-top:calc(8px + env(safe-area-inset-top));background:#16213e;border-bottom:1px solid #0f3460;flex-shrink:0;flex-wrap:wrap}
-.logo{font-size:13px;font-weight:700;color:#0078ff;letter-spacing:.06em;white-space:nowrap;margin-right:4px}
+.logo{font-size:12px;font-weight:800;color:#0078ff;letter-spacing:.03em;white-space:nowrap;margin-right:44px;max-width:calc(100% - 64px);overflow:hidden;text-overflow:ellipsis}
 #fileInput{display:block;width:calc(100% - 86px);max-width:260px;padding:8px;border:1px solid #1a5276;border-radius:6px;background:#0f3460;color:#e6edf3;font-size:13px;font-family:inherit}
 .stats{display:flex;gap:14px;width:100%;align-items:flex-end;justify-content:flex-start}.stat{text-align:right}.file-stat{max-width:210px}.file-stat .stat-value{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.stat-label{font-size:9px;color:#7d8590;text-transform:uppercase;letter-spacing:.08em}.stat-value{font-size:13px;font-weight:600;font-variant-numeric:tabular-nums}.stat-value.hi{color:#0078ff}
 .clear-btn:hover{background:#1a5276;color:white}
@@ -42,28 +42,54 @@ header{position:relative;display:flex;align-items:center;gap:8px;padding:8px 16p
   display:grid;
   grid-template-columns:repeat(4,1fr);
   gap:6px;
-  font-size:12px;
-  color:#e6edf3;
   font-variant-numeric:tabular-nums;
-  line-height:1.2;
 }
-.pos-info div{
-  background:rgba(15,52,96,.35);
-  border:1px solid rgba(26,82,118,.55);
-  border-radius:8px;
-  padding:5px 6px;
+.meter-card{
+  position:relative;
+  min-height:54px;
+  background:linear-gradient(180deg,rgba(15,52,96,.62),rgba(15,52,96,.24));
+  border:1px solid rgba(26,82,118,.72);
+  border-radius:10px;
+  padding:6px 7px 7px;
+  overflow:hidden;
 }
-.pos-info label{
+.meter-card label{
   display:block;
   font-size:9px;
   color:#7d8590;
-  letter-spacing:.06em;
+  letter-spacing:.08em;
+  margin-bottom:3px;
 }
-.pos-info span{
-  color:#0078ff;
-  font-weight:800;
+.meter-card span{
+  position:relative;
+  z-index:2;
+  display:block;
+  color:#e6edf3;
+  font-weight:900;
   font-size:14px;
-}.selects{display:flex;gap:6px;width:100%;align-items:center}.selects select{background:#0f3460;color:#e6edf3;border:1px solid #1a5276;border-radius:6px;padding:6px 8px;font-size:12px}.legend{margin-left:auto;font-size:10px;color:#7d8590;white-space:nowrap}
+  line-height:1.15;
+  white-space:nowrap;
+}
+.meter-bar{
+  position:absolute;
+  left:7px;
+  right:7px;
+  bottom:6px;
+  height:5px;
+  border-radius:999px;
+  background:rgba(125,133,144,.24);
+  overflow:hidden;
+}
+.meter-fill{
+  height:100%;
+  width:0%;
+  border-radius:999px;
+  background:#0078ff;
+  transition:width .15s linear, background .15s linear;
+}
+.meter-card.pace .meter-fill{background:#27ae60}
+.meter-card.hr .meter-fill{background:#eb5757}
+.meter-card.ele .meter-fill{background:#f2c94c}.selects{display:flex;gap:6px;width:100%;align-items:center}.selects select{background:#0f3460;color:#e6edf3;border:1px solid #1a5276;border-radius:6px;padding:6px 8px;font-size:12px}.legend{margin-left:auto;font-size:10px;color:#7d8590;white-space:nowrap}
 
 .replay-btn{
   min-width:72px;
@@ -220,7 +246,7 @@ body.replay-mode .stat-value{
 </style>
 </head>
 <body>
-<header><div class="logo">GPX//VIEWER</div><input type="file" id="fileInput" accept=".gpx,.tcx,*/*"><div class="stats" id="statsWrap" style="display:none"><div class="stat file-stat"><div class="stat-label">ファイル名</div><div class="stat-value" id="sName">—</div></div><div class="stat"><div class="stat-label">距離</div><div class="stat-value hi" id="sDist">—</div></div><div class="stat"><div class="stat-label">獲得標高</div><div class="stat-value" id="sEle">—</div></div></div><button class="clear-btn" id="clearBtn" style="display:none">✕</button></header>
+<header><div class="logo">GPX / TCX Replay Viewer</div><input type="file" id="fileInput" accept=".gpx,.tcx,*/*"><div class="stats" id="statsWrap" style="display:none"><div class="stat file-stat"><div class="stat-label">ファイル名</div><div class="stat-value" id="sName">—</div></div><div class="stat"><div class="stat-label">距離</div><div class="stat-value hi" id="sDist">—</div></div><div class="stat"><div class="stat-label">獲得標高</div><div class="stat-value" id="sEle">—</div></div></div><button class="clear-btn" id="clearBtn" style="display:none">✕</button></header>
 <div class="viewer"><div class="map-wrap">
     <div id="map"></div>
     <div class="replay-overlay" id="replayOverlay">
@@ -252,10 +278,10 @@ body.replay-mode .stat-value{
     </div>
   </div><div class="elevation-wrap"><canvas id="elevationCanvas"></canvas></div></div>
 <div class="controls" id="controls"><button class="play-btn" id="playBtn" type="button">▶</button><input type="range" id="posSlider" min="0" max="1000" value="0"><div class="pos-info">
-    <div><label>距離</label><span id="posDist">0.0km</span></div>
-    <div><label>標高</label><span id="posEle">0m</span></div>
-    <div><label>ペース</label><span id="posPace">—</span></div>
-    <div><label>心拍</label><span id="posHr">—</span></div>
+    <div class="meter-card dist"><label>DIST</label><span id="posDist">0.0km</span><div class="meter-bar"><div class="meter-fill" id="distFill"></div></div></div>
+    <div class="meter-card ele"><label>ELEV</label><span id="posEle">0m</span><div class="meter-bar"><div class="meter-fill" id="eleFill"></div></div></div>
+    <div class="meter-card pace"><label>PACE</label><span id="posPace">—</span><div class="meter-bar"><div class="meter-fill" id="paceFill"></div></div></div>
+    <div class="meter-card hr"><label>HR</label><span id="posHr">—</span><div class="meter-bar"><div class="meter-fill" id="hrFill"></div></div></div>
   </div><div class="selects"><select id="speedSelect">
       <option value="0.5">0.5x</option>
       <option value="1" selected>1x</option>
@@ -265,7 +291,7 @@ body.replay-mode .stat-value{
 <div class="toast" id="toast"></div>
 <script>
 (function(){
-const fileInput=document.getElementById('fileInput'),elevationCanvas=document.getElementById('elevationCanvas'),statsWrap=document.getElementById('statsWrap'),clearBtn=document.getElementById('clearBtn'),controls=document.getElementById('controls'),playBtn=document.getElementById('playBtn'),posSlider=document.getElementById('posSlider'),posDist=document.getElementById('posDist'),posEle=document.getElementById('posEle'),posPace=document.getElementById('posPace'),posHr=document.getElementById('posHr'),speedSelect=document.getElementById('speedSelect'),colorMode=document.getElementById('colorMode'),legend=document.getElementById('legend'),
+const fileInput=document.getElementById('fileInput'),elevationCanvas=document.getElementById('elevationCanvas'),statsWrap=document.getElementById('statsWrap'),clearBtn=document.getElementById('clearBtn'),controls=document.getElementById('controls'),playBtn=document.getElementById('playBtn'),posSlider=document.getElementById('posSlider'),posDist=document.getElementById('posDist'),posEle=document.getElementById('posEle'),posPace=document.getElementById('posPace'),posHr=document.getElementById('posHr'),distFill=document.getElementById('distFill'),eleFill=document.getElementById('eleFill'),paceFill=document.getElementById('paceFill'),hrFill=document.getElementById('hrFill'),speedSelect=document.getElementById('speedSelect'),colorMode=document.getElementById('colorMode'),legend=document.getElementById('legend'),
 replayOverlay=document.getElementById('replayOverlay'),
 replayTitle=document.getElementById('replayTitle'),
 replayDist=document.getElementById('replayDist'),
@@ -569,10 +595,55 @@ function showFinishOverlay(){}
 function setReplayMode(on){isReplayMode=false}
 function toggleReplayMode(){}
 function startReplayFromBeginning(){}
+
+function clamp01(v){return Math.max(0,Math.min(1,v))}
+function paceColorFromSpeed(speedKmh){
+  if(!Number.isFinite(speedKmh)||speedKmh<=0)return '#7d8590';
+  const pace=60/speedKmh;
+  if(pace<=5.0)return '#2f80ed';
+  if(pace<=6.0)return '#27ae60';
+  if(pace<=7.0)return '#f2c94c';
+  return '#eb5757';
+}
+function hrColor(hr){
+  if(!Number.isFinite(hr))return '#7d8590';
+  if(hr<120)return '#2f80ed';
+  if(hr<140)return '#27ae60';
+  if(hr<155)return '#f2c94c';
+  return '#eb5757';
+}
+function updateMeters(p){
+  const t=tracks[0];
+  const total=t?.dist||getTotalDistance()||1;
+  distFill.style.width=(clamp01((p.dist||0)/total)*100).toFixed(1)+'%';
+
+  let maxEle=-Infinity,minEle=Infinity;
+  if(t&&t.points){
+    for(const pt of t.points){
+      if(Number.isFinite(pt.ele)){
+        if(pt.ele>maxEle)maxEle=pt.ele;
+        if(pt.ele<minEle)minEle=pt.ele;
+      }
+    }
+  }
+  const elePct=(Number.isFinite(maxEle)&&maxEle>minEle)?clamp01((p.ele-minEle)/(maxEle-minEle)):0;
+  eleFill.style.width=(elePct*100).toFixed(1)+'%';
+
+  const speed=p.speedKmh;
+  const pacePct=Number.isFinite(speed)&&speed>0?clamp01(speed/15):0;
+  paceFill.style.width=(pacePct*100).toFixed(1)+'%';
+  paceFill.style.background=paceColorFromSpeed(speed);
+
+  const hr=p.hr;
+  const hrPct=Number.isFinite(hr)?clamp01((hr-90)/80):0;
+  hrFill.style.width=(hrPct*100).toFixed(1)+'%';
+  hrFill.style.background=hrColor(hr);
+}
 function updateCurrentPosition(p){if(!p)return;const c=getColorByPoint(p);if(!currentMarker){currentMarker=L.marker([p.lat,p.lon],{icon:makeCurrentIcon('#ff2d55'),zIndexOffset:1000}).addTo(map);mapLayers.push(currentMarker)}else{currentMarker.setIcon(makeCurrentIcon('#ff2d55'));currentMarker.setLatLng([p.lat,p.lon])}const currentPoint=map.latLngToContainerPoint([p.lat,p.lon]),mapSize=map.getSize(),targetPoint=L.point(mapSize.x*.5,mapSize.y*.5),panOffset=currentPoint.subtract(targetPoint);map.panBy(panOffset,{animate:false});currentDistance=p.dist||0;posDist.textContent=(currentDistance/1000).toFixed(1)+'km';
 posEle.textContent=Math.round(p.ele)+'m';
 posPace.textContent=fmtPaceFromSpeed(p.speedKmh);
 posHr.textContent=Number.isFinite(p.hr)?Math.round(p.hr)+'bpm':'—';
+updateMeters(p);
 drawElevation(tracks,currentDistance)}
 function updateCurrentPositionByProgress(progress){
   const t=tracks[0];
@@ -642,6 +713,6 @@ document.addEventListener('click',e=>{
   const tc=document.getElementById('tileControl');
   if(tc&&!tc.contains(e.target))tc.classList.remove('open');
 });
-posSlider.addEventListener('input',()=>{stopPlayback();updateCurrentPositionFromSlider()});playBtn.addEventListener('click',()=>{if(isReplayMode&&!isPlaying&&Number(posSlider.value)>=1000){posSlider.value=0;updateCurrentPositionByProgress(0)}togglePlayback()});speedSelect.addEventListener('change',()=>{if(isPlaying)startPlayback()});colorMode.addEventListener('change',()=>{updateLegend();redrawMapTracks();updateCurrentPositionFromSlider()});fileInput.addEventListener('change',e=>{const file=e.target.files&&e.target.files[0];if(file)loadFile(file);e.target.value=''});clearBtn.addEventListener('click',()=>{stopPlayback();mapLayers.forEach(layer=>map.removeLayer(layer));tracks=[];mapLayers=[];currentMarker=null;allBounds=null,isReplayMode=false;controls.classList.remove('show');replayOverlay.classList.remove('show');replayFinish.classList.remove('show');statsWrap.style.display='none';clearBtn.style.display='none';posSlider.value=0;posDist.textContent='0.0km';posEle.textContent='0m';posPace.textContent='—';posHr.textContent='—';drawElevation(tracks)});window.addEventListener('resize',()=>setTimeout(()=>{map.invalidateSize();drawElevation(tracks,currentDistance)},100));drawElevation(tracks);
+posSlider.addEventListener('input',()=>{stopPlayback();updateCurrentPositionFromSlider()});playBtn.addEventListener('click',()=>{if(isReplayMode&&!isPlaying&&Number(posSlider.value)>=1000){posSlider.value=0;updateCurrentPositionByProgress(0)}togglePlayback()});speedSelect.addEventListener('change',()=>{if(isPlaying)startPlayback()});colorMode.addEventListener('change',()=>{updateLegend();redrawMapTracks();updateCurrentPositionFromSlider()});fileInput.addEventListener('change',e=>{const file=e.target.files&&e.target.files[0];if(file)loadFile(file);e.target.value=''});clearBtn.addEventListener('click',()=>{stopPlayback();mapLayers.forEach(layer=>map.removeLayer(layer));tracks=[];mapLayers=[];currentMarker=null;allBounds=null,isReplayMode=false;controls.classList.remove('show');replayOverlay.classList.remove('show');replayFinish.classList.remove('show');statsWrap.style.display='none';clearBtn.style.display='none';posSlider.value=0;posDist.textContent='0.0km';posEle.textContent='0m';posPace.textContent='—';posHr.textContent='—';distFill.style.width='0%';eleFill.style.width='0%';paceFill.style.width='0%';hrFill.style.width='0%';drawElevation(tracks)});window.addEventListener('resize',()=>setTimeout(()=>{map.invalidateSize();drawElevation(tracks,currentDistance)},100));drawElevation(tracks);
 })();
 </script></body></html>
