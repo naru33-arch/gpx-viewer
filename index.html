@@ -37,8 +37,9 @@ header{position:relative;display:flex;align-items:center;gap:8px;padding:8px 16p
 }
 .viewer{flex:1;min-height:0;display:grid;grid-template-rows:72% 28%;overflow:hidden}.map-wrap{position:relative;min-height:0;background:#1a1a2e;border-bottom:1px solid #0f3460}#map{width:100%;height:100%}.elevation-wrap{position:relative;min-height:0;background:#111827}#elevationCanvas{width:100%;height:100%;display:block}
 .toast{position:fixed;top:80px;left:50%;transform:translateX(-50%);background:rgba(255,107,107,.95);color:#fff;padding:10px 18px;border-radius:8px;font-size:13px;z-index:9999;display:none;max-width:90vw;text-align:center}.leaflet-container{background:#1a1a2e!important}.leaflet-control-zoom a{background:#16213e!important;color:#e6edf3!important;border-color:#0f3460!important;width:30px!important;height:30px!important;line-height:30px!important}.leaflet-control-attribution{background:rgba(22,33,62,.82)!important;color:#7d8590!important;font-size:9px!important}.leaflet-control-attribution a{color:#7d8590!important}
-.controls{flex-shrink:0;background:#111827;border-top:1px solid #0f3460;padding:8px 16px calc(8px + env(safe-area-inset-bottom));display:flex;gap:8px;align-items:center;flex-wrap:wrap;visibility:hidden;opacity:0;pointer-events:none}.controls.show{visibility:visible;opacity:1;pointer-events:auto}.play-btn{width:38px;height:34px;border-radius:999px;border:1px solid #1a5276;background:#0f3460;color:#e6edf3;font-size:15px;font-weight:800;display:flex;align-items:center;justify-content:center;cursor:pointer;-webkit-appearance:none;appearance:none}.play-btn.playing{background:#0078ff;color:#fff;border-color:#0078ff}#posSlider{flex:1 1 200px;min-width:160px;accent-color:#0078ff}.pos-info{
-  width:100%;
+.controls{flex-shrink:0;background:#111827;border-top:1px solid #0f3460;padding:8px 16px calc(8px + env(safe-area-inset-bottom));display:flex;gap:8px;align-items:center;flex-wrap:wrap;visibility:hidden;opacity:0;pointer-events:none}.controls.show{visibility:visible;opacity:1;pointer-events:auto}.play-btn{width:38px;height:34px;flex:0 0 38px;border-radius:999px;border:1px solid #1a5276;background:#0f3460;color:#e6edf3;font-size:15px;font-weight:800;display:flex;align-items:center;justify-content:center;cursor:pointer;-webkit-appearance:none;appearance:none}.play-btn.playing{background:#0078ff;color:#fff;border-color:#0078ff}#posSlider{width:calc(100% - 52px);flex:1 1 calc(100% - 52px);min-width:180px;accent-color:#0078ff}.pos-info{
+  flex:1 1 calc(100% - 50px);
+  width:auto;
   display:grid;
   grid-template-columns:repeat(4,1fr);
   gap:6px;
@@ -277,12 +278,12 @@ body.replay-mode .stat-value{
       </div>
     </div>
   </div><div class="elevation-wrap"><canvas id="elevationCanvas"></canvas></div></div>
-<div class="controls" id="controls"><button class="play-btn" id="playBtn" type="button">▶</button><input type="range" id="posSlider" min="0" max="1000" value="0"><div class="pos-info">
+<div class="controls" id="controls"><button class="play-btn" id="playBtn" type="button">▶</button><div class="pos-info">
     <div class="meter-card dist"><label>DIST</label><span id="posDist">0.0km</span><div class="meter-bar"><div class="meter-fill" id="distFill"></div></div></div>
     <div class="meter-card ele"><label>ELEV</label><span id="posEle">0m</span><div class="meter-bar"><div class="meter-fill" id="eleFill"></div></div></div>
     <div class="meter-card pace"><label>PACE</label><span id="posPace">—</span><div class="meter-bar"><div class="meter-fill" id="paceFill"></div></div></div>
     <div class="meter-card hr"><label>HR</label><span id="posHr">—</span><div class="meter-bar"><div class="meter-fill" id="hrFill"></div></div></div>
-  </div><div class="selects"><select id="speedSelect">
+  </div><input type="range" id="posSlider" min="0" max="1000" value="0"><div class="selects"><select id="speedSelect">
       <option value="0.5">0.5x</option>
       <option value="1" selected>1x</option>
       <option value="2">2x</option>
@@ -302,7 +303,7 @@ replayProgress=document.getElementById('replayProgress'),
 replayFinish=document.getElementById('replayFinish'),
 finishName=document.getElementById('finishName'),
 finishStats=document.getElementById('finishStats');
-let tracks=[],mapLayers=[],currentMarker=null,currentDistance=0,playTimer=null,isPlaying=false,playStartReal=0,playStartActivity=0,allBounds=null,isReplayMode=false;
+let tracks=[],mapLayers=[],currentMarker=null,currentDistance=0,playTimer=null,isPlaying=false,playStartReal=0,playStartActivity=0,allBounds=null,isReplayMode=false,playEnded=false;
 const DEFAULT_COLOR='#0078ff';
 const map=L.map('map',{center:[36.2,138.2],zoom:5,zoomControl:true,attributionControl:true});
 const TILE_DEFS={
@@ -553,7 +554,7 @@ function drawColoredTrack(track){
   }
 }
 function addTrackToMap(track){drawColoredTrack(track);const start=track.points[0],goal=track.points[track.points.length-1];const startM=L.marker([start.lat,start.lon],{icon:makeMarker('#0078ff','S')}).addTo(map),goalM=L.marker([goal.lat,goal.lon],{icon:makeMarker('#ff6b6b','G')}).addTo(map);mapLayers.push(startM,goalM);if(allBounds&&allBounds.isValid())map.fitBounds(allBounds,{padding:[32,32]})}
-function redrawMapTracks(){const keep=currentMarker;mapLayers.forEach(layer=>{if(layer!==keep)map.removeLayer(layer)});mapLayers=keep?[keep]:[];allBounds=null,isReplayMode=false;tracks.forEach(addTrackToMap)}
+function redrawMapTracks(){const keep=currentMarker;mapLayers.forEach(layer=>{if(layer!==keep)map.removeLayer(layer)});mapLayers=keep?[keep]:[];allBounds=null,isReplayMode=false,playEnded=false;tracks.forEach(addTrackToMap)}
 function drawElevation(trackList,markerDist=null){const {ctx,width,height}=prepareCanvas(elevationCanvas);ctx.clearRect(0,0,width,height);ctx.fillStyle='#111827';ctx.fillRect(0,0,width,height);ctx.fillStyle='#7d8590';ctx.font='10px -apple-system, Helvetica Neue, Arial, sans-serif';ctx.textAlign='left';ctx.textBaseline='top';ctx.fillText('ELEVATION PROFILE',12,8);if(!trackList.length){ctx.font='13px -apple-system, Helvetica Neue, Arial, sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText('GPX / TCXを読み込むと高低図を表示します',width/2,height/2);return}const padL=48,padR=16,padT=28,padB=48,plotW=Math.max(1,width-padL-padR),plotH=Math.max(1,height-padT-padB);let minEle=Infinity,maxEle=-Infinity,eleCount=0,totalDist=0;for(const t of trackList){totalDist+=t.dist||0;for(const p of t.points){if(Number.isFinite(p.ele)){if(p.ele<minEle)minEle=p.ele;if(p.ele>maxEle)maxEle=p.ele;eleCount++}}}if(eleCount<2||totalDist<=0)return;if(maxEle-minEle<1){maxEle+=.5;minEle-=.5}const eleRange=maxEle-minEle,minGrid=Math.floor(minEle/100)*100,maxGrid=Math.ceil(maxEle/100)*100;const labelMinGap=18;let lastEleLabelY=-9999;for(let ele=minGrid;ele<=maxGrid;ele+=100){const y=padT+((maxEle-ele)/eleRange)*plotH;ctx.strokeStyle=(ele%200===0)?'rgba(125,133,144,.35)':'rgba(125,133,144,.18)';ctx.beginPath();ctx.moveTo(padL,y);ctx.lineTo(width-padR,y);ctx.stroke();ctx.fillStyle='#7d8590';if(Math.abs(y-lastEleLabelY)>=labelMinGap||ele===minGrid||ele===maxGrid){ctx.textAlign='right';ctx.textBaseline='middle';ctx.fillText(ele+'m',padL-6,y);lastEleLabelY=y}}const totalKm=totalDist/1000,kmStep=totalKm<=50?5:(totalKm<=100?10:20);for(let km=0;km<=totalKm;km+=kmStep){const x=padL+((km*1000)/totalDist)*plotW;ctx.strokeStyle=(km%(kmStep*2)===0)?'rgba(125,133,144,.35)':'rgba(125,133,144,.18)';ctx.beginPath();ctx.moveTo(x,padT);ctx.lineTo(x,padT+plotH);ctx.stroke();ctx.save();ctx.translate(x,height-padB+36);ctx.rotate(-Math.PI/2);ctx.textAlign='left';ctx.textBaseline='middle';ctx.fillStyle='#7d8590';ctx.fillText(km+'km',0,0);ctx.restore()}let distOffset=0;for(const t of trackList){const pts=simplifyPoints(t.points,5000);ctx.beginPath();pts.forEach((p,i)=>{const x=padL+((distOffset+p.dist)/totalDist)*plotW,y=padT+((maxEle-p.ele)/eleRange)*plotH;if(i===0)ctx.moveTo(x,y);else ctx.lineTo(x,y)});ctx.strokeStyle=DEFAULT_COLOR;ctx.lineWidth=2.2;ctx.lineJoin='round';ctx.lineCap='round';ctx.stroke();distOffset+=t.dist}if(markerDist!==null&&totalDist>0){const mx=padL+(markerDist/totalDist)*plotW;ctx.strokeStyle='#ff2d55';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(mx,padT);ctx.lineTo(mx,padT+plotH);ctx.stroke();const p=getPointAtDistance(markerDist);if(p){const my=padT+((maxEle-p.ele)/eleRange)*plotH;ctx.beginPath();ctx.arc(mx,my,4,0,Math.PI*2);ctx.fillStyle='#ff2d55';ctx.fill();ctx.strokeStyle='#fff';ctx.lineWidth=1.5;ctx.stroke()}}}
 function updateUI(last){const has=tracks.length>0;statsWrap.style.display=has?'flex':'none';clearBtn.style.display=has?'':'none';if(!has)return;const totalDist=tracks.reduce((s,t)=>s+t.dist,0),totalGain=tracks.reduce((s,t)=>s+t.gain,0);document.getElementById('sName').textContent=last?last.name:tracks[tracks.length-1].name;document.getElementById('sDist').textContent=fmtDist(totalDist);document.getElementById('sEle').textContent=Math.round(totalGain)+' m'}
 function updateLegend(){
@@ -664,10 +665,21 @@ function updateCurrentPositionByProgress(progress){
 function updateCurrentPositionFromSlider(){
   updateCurrentPositionByProgress(Number(posSlider.value)/1000);
 }
-function setPlaying(on){isPlaying=on;playBtn.textContent=on?'⏸':'▶';playBtn.classList.toggle('playing',on)}function stopPlayback(){if(playTimer){clearInterval(playTimer);playTimer=null}setPlaying(false)}
+function setPlaying(on){
+  isPlaying=on;
+  if(on){
+    playEnded=false;
+    playBtn.textContent='⏸';
+  }else{
+    playBtn.textContent=playEnded?'↩':'▶';
+  }
+  playBtn.classList.toggle('playing',on);
+}
+function stopPlayback(){if(playTimer){clearInterval(playTimer);playTimer=null}setPlaying(false)}
 function startPlayback(){
   if(!tracks.length)return;
   stopPlayback();
+  playEnded=false;
   setPlaying(true);
 
   // 1x = 全コース30秒で再生。
@@ -689,6 +701,7 @@ function startPlayback(){
       progress=1;
       posSlider.value=1000;
       updateCurrentPositionByProgress(progress);
+      playEnded=true;
       stopPlayback();
       showFinishOverlay();
       return;
@@ -699,7 +712,7 @@ function startPlayback(){
   },50);
 }
 function togglePlayback(){if(isPlaying)stopPlayback();else startPlayback()}
-function loadFile(file){stopPlayback();const lower=file.name.toLowerCase();if(!lower.endsWith('.gpx')&&!lower.endsWith('.tcx')){showToast(`${file.name} はGPX/TCXファイルではありません`);return}const reader=new FileReader();reader.onload=e=>{try{const parsed=lower.endsWith('.tcx')?parseTCX(e.target.result):parseGPX(e.target.result);let points=enrichSpeed(parsed.points);if(points.length<2){showToast(`${file.name}: トラックポイントが見つかりませんでした`);return}const {dist,gain}=calcStats(points),times=points.map(p=>p.time).filter(v=>Number.isFinite(v)),hasTime=(parsed.type==='tcx'&&times.length>=2),startTime=hasTime?times[0]:null,endTime=hasTime?times[times.length-1]:null,elapsed=hasTime?(endTime-startTime)/1000:0,track={name:parsed.name,points,dist,gain,type:parsed.type,hasTime,startTime,endTime,elapsed};mapLayers.forEach(layer=>map.removeLayer(layer));tracks=[];mapLayers=[];allBounds=null,isReplayMode=false;currentMarker=null;currentDistance=0;tracks.push(track);addTrackToMap(track);controls.classList.add('show');posSlider.value=0;updateUI(track);updateLegend();replayFinish.classList.remove('show');updateCurrentPositionFromSlider()}catch(err){console.error(err);showToast(`読み込みエラー: ${err.message}`)}};reader.onerror=()=>showToast(`${file.name}: 読み込みに失敗しました`);reader.readAsText(file,'UTF-8')}
+function loadFile(file){playEnded=false;stopPlayback();const lower=file.name.toLowerCase();if(!lower.endsWith('.gpx')&&!lower.endsWith('.tcx')){showToast(`${file.name} はGPX/TCXファイルではありません`);return}const reader=new FileReader();reader.onload=e=>{try{const parsed=lower.endsWith('.tcx')?parseTCX(e.target.result):parseGPX(e.target.result);let points=enrichSpeed(parsed.points);if(points.length<2){showToast(`${file.name}: トラックポイントが見つかりませんでした`);return}const {dist,gain}=calcStats(points),times=points.map(p=>p.time).filter(v=>Number.isFinite(v)),hasTime=(parsed.type==='tcx'&&times.length>=2),startTime=hasTime?times[0]:null,endTime=hasTime?times[times.length-1]:null,elapsed=hasTime?(endTime-startTime)/1000:0,track={name:parsed.name,points,dist,gain,type:parsed.type,hasTime,startTime,endTime,elapsed};mapLayers.forEach(layer=>map.removeLayer(layer));tracks=[];mapLayers=[];allBounds=null,isReplayMode=false,playEnded=false;currentMarker=null;currentDistance=0;tracks.push(track);addTrackToMap(track);controls.classList.add('show');posSlider.value=0;updateUI(track);updateLegend();replayFinish.classList.remove('show');updateCurrentPositionFromSlider()}catch(err){console.error(err);showToast(`読み込みエラー: ${err.message}`)}};reader.onerror=()=>showToast(`${file.name}: 読み込みに失敗しました`);reader.readAsText(file,'UTF-8')}
 document.getElementById('tileToggle').addEventListener('click',e=>{
   e.stopPropagation();
   document.getElementById('tileControl').classList.toggle('open');
@@ -713,6 +726,19 @@ document.addEventListener('click',e=>{
   const tc=document.getElementById('tileControl');
   if(tc&&!tc.contains(e.target))tc.classList.remove('open');
 });
-posSlider.addEventListener('input',()=>{stopPlayback();updateCurrentPositionFromSlider()});playBtn.addEventListener('click',()=>{if(isReplayMode&&!isPlaying&&Number(posSlider.value)>=1000){posSlider.value=0;updateCurrentPositionByProgress(0)}togglePlayback()});speedSelect.addEventListener('change',()=>{if(isPlaying)startPlayback()});colorMode.addEventListener('change',()=>{updateLegend();redrawMapTracks();updateCurrentPositionFromSlider()});fileInput.addEventListener('change',e=>{const file=e.target.files&&e.target.files[0];if(file)loadFile(file);e.target.value=''});clearBtn.addEventListener('click',()=>{stopPlayback();mapLayers.forEach(layer=>map.removeLayer(layer));tracks=[];mapLayers=[];currentMarker=null;allBounds=null,isReplayMode=false;controls.classList.remove('show');replayOverlay.classList.remove('show');replayFinish.classList.remove('show');statsWrap.style.display='none';clearBtn.style.display='none';posSlider.value=0;posDist.textContent='0.0km';posEle.textContent='0m';posPace.textContent='—';posHr.textContent='—';distFill.style.width='0%';eleFill.style.width='0%';paceFill.style.width='0%';hrFill.style.width='0%';drawElevation(tracks)});window.addEventListener('resize',()=>setTimeout(()=>{map.invalidateSize();drawElevation(tracks,currentDistance)},100));drawElevation(tracks);
+posSlider.addEventListener('input',()=>{playEnded=false;stopPlayback();updateCurrentPositionFromSlider()});playBtn.addEventListener('click',()=>{
+  if(playEnded&&!isPlaying){
+    posSlider.value=0;
+    updateCurrentPositionByProgress(0);
+    playEnded=false;
+    startPlayback();
+    return;
+  }
+  if(!isPlaying&&Number(posSlider.value)>=1000){
+    posSlider.value=0;
+    updateCurrentPositionByProgress(0);
+  }
+  togglePlayback();
+});speedSelect.addEventListener('change',()=>{if(isPlaying)startPlayback()});colorMode.addEventListener('change',()=>{updateLegend();redrawMapTracks();updateCurrentPositionFromSlider()});fileInput.addEventListener('change',e=>{const file=e.target.files&&e.target.files[0];if(file)loadFile(file);e.target.value=''});clearBtn.addEventListener('click',()=>{playEnded=false;stopPlayback();mapLayers.forEach(layer=>map.removeLayer(layer));tracks=[];mapLayers=[];currentMarker=null;allBounds=null,isReplayMode=false,playEnded=false;controls.classList.remove('show');replayOverlay.classList.remove('show');replayFinish.classList.remove('show');statsWrap.style.display='none';clearBtn.style.display='none';posSlider.value=0;posDist.textContent='0.0km';posEle.textContent='0m';posPace.textContent='—';posHr.textContent='—';distFill.style.width='0%';eleFill.style.width='0%';paceFill.style.width='0%';hrFill.style.width='0%';drawElevation(tracks)});window.addEventListener('resize',()=>setTimeout(()=>{map.invalidateSize();drawElevation(tracks,currentDistance)},100));drawElevation(tracks);
 })();
 </script></body></html>
