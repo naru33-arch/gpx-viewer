@@ -65,41 +65,6 @@ header{position:relative;display:flex;align-items:center;gap:8px;padding:8px 16p
   font-size:14px;
 }.selects{display:flex;gap:6px;width:100%;align-items:center}.selects select{background:#0f3460;color:#e6edf3;border:1px solid #1a5276;border-radius:6px;padding:6px 8px;font-size:12px}.legend{margin-left:auto;font-size:10px;color:#7d8590;white-space:nowrap}
 
-.tile-control{
-  position:absolute;
-  top:10px;
-  right:10px;
-  z-index:1000;
-  display:flex;
-  flex-direction:column;
-  gap:4px;
-  background:rgba(22,33,62,.88);
-  border:1px solid #0f3460;
-  border-radius:8px;
-  padding:6px;
-  -webkit-backdrop-filter:blur(6px);
-  backdrop-filter:blur(6px);
-}
-.tile-control button{
-  min-width:74px;
-  padding:5px 7px;
-  border-radius:6px;
-  border:1px solid #1a5276;
-  background:#0f3460;
-  color:#7d8590;
-  font-size:10px;
-  font-family:inherit;
-  cursor:pointer;
-  -webkit-appearance:none;
-  appearance:none;
-}
-.tile-control button.active{
-  color:#fff;
-  background:#0078ff;
-  border-color:#0078ff;
-}
-
-
 .replay-btn{
   min-width:72px;
   height:34px;
@@ -181,9 +146,7 @@ body.replay-mode header{
   padding-top:calc(6px + env(safe-area-inset-top));
   padding-bottom:6px;
 }
-body.replay-mode .tile-control{
-  display:none;
-}
+
 body.replay-mode .stats{
   gap:10px;
 }
@@ -194,6 +157,66 @@ body.replay-mode .stat-value{
   font-size:12px;
 }
 
+
+.tile-control{
+  position:absolute;
+  top:10px;
+  right:10px;
+  z-index:1000;
+  display:flex;
+  flex-direction:column;
+  align-items:flex-end;
+  gap:4px;
+}
+.tile-toggle{
+  min-width:46px;
+  height:34px;
+  padding:0 10px;
+  border-radius:999px;
+  border:1px solid #1a5276;
+  background:rgba(15,52,96,.94);
+  color:#e6edf3;
+  font-size:12px;
+  font-weight:800;
+  font-family:inherit;
+  cursor:pointer;
+  -webkit-appearance:none;
+  appearance:none;
+  box-shadow:0 2px 8px rgba(0,0,0,.25);
+}
+.tile-menu{
+  display:none;
+  flex-direction:column;
+  gap:4px;
+  background:rgba(22,33,62,.90);
+  border:1px solid #0f3460;
+  border-radius:8px;
+  padding:6px;
+  -webkit-backdrop-filter:blur(6px);
+  backdrop-filter:blur(6px);
+  box-shadow:0 4px 16px rgba(0,0,0,.28);
+}
+.tile-control.open .tile-menu{
+  display:flex;
+}
+.tile-menu button{
+  min-width:74px;
+  padding:5px 7px;
+  border-radius:6px;
+  border:1px solid #1a5276;
+  background:#0f3460;
+  color:#7d8590;
+  font-size:10px;
+  font-family:inherit;
+  cursor:pointer;
+  -webkit-appearance:none;
+  appearance:none;
+}
+.tile-menu button.active{
+  color:#fff;
+  background:#0078ff;
+  border-color:#0078ff;
+}
 </style>
 </head>
 <body>
@@ -218,11 +241,14 @@ body.replay-mode .stat-value{
       </div>
     </div>
     <div class="tile-control" id="tileControl">
-      <button type="button" data-tile="gsi_std" class="active">地理院 標準</button>
-      <button type="button" data-tile="gsi_pale">地理院 淡色</button>
-      <button type="button" data-tile="gsi_photo">地理院 写真</button>
-      <button type="button" data-tile="osm">OSM</button>
-      <button type="button" data-tile="opentopo">Topo</button>
+      <button type="button" class="tile-toggle" id="tileToggle">地図</button>
+      <div class="tile-menu" id="tileMenu">
+        <button type="button" data-tile="gsi_std" class="active">地理院 標準</button>
+        <button type="button" data-tile="gsi_pale">地理院 淡色</button>
+        <button type="button" data-tile="gsi_photo">地理院 写真</button>
+        <button type="button" data-tile="osm">OSM</button>
+        <button type="button" data-tile="opentopo">Topo</button>
+      </div>
     </div>
   </div><div class="elevation-wrap"><canvas id="elevationCanvas"></canvas></div></div>
 <div class="controls" id="controls"><button class="play-btn" id="playBtn" type="button">▶</button><input type="range" id="posSlider" min="0" max="1000" value="0"><div class="pos-info">
@@ -280,7 +306,7 @@ function setBaseTile(key){
   const def=TILE_DEFS[key]||TILE_DEFS.gsi_std;
   if(currentTileLayer)map.removeLayer(currentTileLayer);
   currentTileLayer=L.tileLayer(def.url,def.options).addTo(map);
-  document.querySelectorAll('#tileControl button').forEach(btn=>{
+  document.querySelectorAll('#tileMenu button').forEach(btn=>{
     btn.classList.toggle('active',btn.dataset.tile===key);
   });
 }
@@ -603,7 +629,19 @@ function startPlayback(){
 }
 function togglePlayback(){if(isPlaying)stopPlayback();else startPlayback()}
 function loadFile(file){stopPlayback();const lower=file.name.toLowerCase();if(!lower.endsWith('.gpx')&&!lower.endsWith('.tcx')){showToast(`${file.name} はGPX/TCXファイルではありません`);return}const reader=new FileReader();reader.onload=e=>{try{const parsed=lower.endsWith('.tcx')?parseTCX(e.target.result):parseGPX(e.target.result);let points=enrichSpeed(parsed.points);if(points.length<2){showToast(`${file.name}: トラックポイントが見つかりませんでした`);return}const {dist,gain}=calcStats(points),times=points.map(p=>p.time).filter(v=>Number.isFinite(v)),hasTime=(parsed.type==='tcx'&&times.length>=2),startTime=hasTime?times[0]:null,endTime=hasTime?times[times.length-1]:null,elapsed=hasTime?(endTime-startTime)/1000:0,track={name:parsed.name,points,dist,gain,type:parsed.type,hasTime,startTime,endTime,elapsed};mapLayers.forEach(layer=>map.removeLayer(layer));tracks=[];mapLayers=[];allBounds=null,isReplayMode=false;currentMarker=null;currentDistance=0;tracks.push(track);addTrackToMap(track);controls.classList.add('show');posSlider.value=0;updateUI(track);updateLegend();replayFinish.classList.remove('show');updateCurrentPositionFromSlider()}catch(err){console.error(err);showToast(`読み込みエラー: ${err.message}`)}};reader.onerror=()=>showToast(`${file.name}: 読み込みに失敗しました`);reader.readAsText(file,'UTF-8')}
-document.querySelectorAll('#tileControl button').forEach(btn=>btn.addEventListener('click',()=>setBaseTile(btn.dataset.tile)));
+document.getElementById('tileToggle').addEventListener('click',e=>{
+  e.stopPropagation();
+  document.getElementById('tileControl').classList.toggle('open');
+});
+document.querySelectorAll('#tileMenu button').forEach(btn=>btn.addEventListener('click',e=>{
+  e.stopPropagation();
+  setBaseTile(btn.dataset.tile);
+  document.getElementById('tileControl').classList.remove('open');
+}));
+document.addEventListener('click',e=>{
+  const tc=document.getElementById('tileControl');
+  if(tc&&!tc.contains(e.target))tc.classList.remove('open');
+});
 posSlider.addEventListener('input',()=>{stopPlayback();updateCurrentPositionFromSlider()});playBtn.addEventListener('click',()=>{if(isReplayMode&&!isPlaying&&Number(posSlider.value)>=1000){posSlider.value=0;updateCurrentPositionByProgress(0)}togglePlayback()});speedSelect.addEventListener('change',()=>{if(isPlaying)startPlayback()});colorMode.addEventListener('change',()=>{updateLegend();redrawMapTracks();updateCurrentPositionFromSlider()});fileInput.addEventListener('change',e=>{const file=e.target.files&&e.target.files[0];if(file)loadFile(file);e.target.value=''});clearBtn.addEventListener('click',()=>{stopPlayback();mapLayers.forEach(layer=>map.removeLayer(layer));tracks=[];mapLayers=[];currentMarker=null;allBounds=null,isReplayMode=false;controls.classList.remove('show');replayOverlay.classList.remove('show');replayFinish.classList.remove('show');statsWrap.style.display='none';clearBtn.style.display='none';posSlider.value=0;posDist.textContent='0.0km';posEle.textContent='0m';posPace.textContent='—';posHr.textContent='—';drawElevation(tracks)});window.addEventListener('resize',()=>setTimeout(()=>{map.invalidateSize();drawElevation(tracks,currentDistance)},100));drawElevation(tracks);
 })();
 </script></body></html>
