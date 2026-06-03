@@ -231,13 +231,12 @@ function parseGPX(text){
 
 function parseTCX(text){const doc=new DOMParser().parseFromString(text.replace(/^\uFEFF/,''),'application/xml');if(doc.querySelector('parsererror'))throw new Error('TCX/XMLとして解析できません');let name=doc.querySelector('Activity Id')?.textContent?.trim()||doc.querySelector('Name')?.textContent?.trim()||'TCXアクティビティ';let points=[];doc.querySelectorAll('Trackpoint').forEach(tp=>{const lat=parseFloat(tp.querySelector('Position LatitudeDegrees')?.textContent),lon=parseFloat(tp.querySelector('Position LongitudeDegrees')?.textContent);if(isNaN(lat)||isNaN(lon))return;const ele=parseFloat(tp.querySelector('AltitudeMeters')?.textContent),distance=parseFloat(tp.querySelector('DistanceMeters')?.textContent),timeText=tp.querySelector('Time')?.textContent?.trim(),hr=parseFloat(tp.querySelector('HeartRateBpm Value')?.textContent);points.push({lat,lon,ele:Number.isFinite(ele)?ele:0,distance:Number.isFinite(distance)?distance:null,time:timeText?new Date(timeText).getTime():null,hr:Number.isFinite(hr)?hr:null})});return{name,points:enrichPoints(points),type:'tcx'}}
 function enrichSpeed(pts){
-  // 1点ごとの瞬間速度だとGPS揺れで色が細かく変わりすぎるため、
-  // 約10秒または最大10ポイントの範囲で平滑化した移動速度を使う。
+  // GPS揺れで色が細かく変わりすぎないよう、約15秒または最大15ポイントで平滑化。
   for(let i=0;i<pts.length;i++){
     let j=i;
     while(j>0){
       const dt=(pts[i].time||0)-(pts[j-1].time||0);
-      if(dt>=10000 || i-(j-1)>=10)break;
+      if(dt>=15000 || i-(j-1)>=15)break;
       j--;
     }
 
@@ -297,7 +296,57 @@ function getColorByPoint(p){
 }
 function getPointAtDistance(targetDist){if(!tracks.length)return null;let offset=0;for(const t of tracks){const pts=t.points;if(targetDist<=offset+(t.dist||0)){const local=targetDist-offset;for(let i=1;i<pts.length;i++){const a=pts[i-1],b=pts[i];if(local<=b.dist){const seg=b.dist-a.dist||1,r=Math.max(0,Math.min(1,(local-a.dist)/seg));return{lat:a.lat+(b.lat-a.lat)*r,lon:a.lon+(b.lon-a.lon)*r,ele:a.ele+(b.ele-a.ele)*r,dist:targetDist,hr:b.hr,speedKmh:b.speedKmh,time:b.time}}}return{...pts[pts.length-1],dist:targetDist}}offset+=t.dist||0}const lt=tracks[tracks.length-1],last=lt.points[lt.points.length-1];return{...last,dist:getTotalDistance()}}
 function getPointAtElapsed(elapsedSec){const t=tracks[0];if(!t||t.type!=='tcx'||!t.hasTime)return getPointAtDistance(getTotalDistance()*(Number(posSlider.value)/1000));const target=t.startTime+elapsedSec*1000,pts=t.points;for(let i=1;i<pts.length;i++){const a=pts[i-1],b=pts[i];if(Number.isFinite(a.time)&&Number.isFinite(b.time)&&target<=b.time){const dt=b.time-a.time||1,r=Math.max(0,Math.min(1,(target-a.time)/dt));return{lat:a.lat+(b.lat-a.lat)*r,lon:a.lon+(b.lon-a.lon)*r,ele:a.ele+(b.ele-a.ele)*r,dist:a.dist+(b.dist-a.dist)*r,hr:b.hr,speedKmh:b.speedKmh,time:target}}}return{...pts[pts.length-1]}}
-function drawColoredTrack(track){const pts=simplifyPoints(track.points,7000);let seg=[],lastColor=null;const flush=()=>{if(seg.length>=2){const poly=L.polyline(seg,{color:lastColor||DEFAULT_COLOR,weight:5,opacity:.95,lineJoin:'round',lineCap:'butt'}).addTo(map);mapLayers.push(poly);const b=poly.getBounds();allBounds=allBounds?allBounds.extend(b):b}seg=[]};for(let i=0;i<pts.length;i++){const p=pts[i],c=getColorByPoint(p);if(lastColor===null){lastColor=c;seg.push([p.lat,p.lon]);continue}if(c!==lastColor){seg.push([p.lat,p.lon]);flush();lastColor=c;seg=[[p.lat,p.lon]]}else seg.push([p.lat,p.lon])}flush()}
+function drawColoredTrack(track){
+  const pts=simplifyPoints(track.points,7000);
+  if(!pts||pts.length<2)return;
+
+  // まず滑らかなベース線を1本描く。これでドット感・途切れ感を抑える。
+  const baseLatLngs=pts.map(p=>[p.lat,p.lon]);
+  const baseColor=(track.type==='gpx'||colorMode.value==='single')?DEFAULT_COLOR:'rgba(0,120,255,.28)';
+  const base=L.polyline(baseLatLngs,{
+    color:baseColor,
+    weight:5,
+    opacity:.95,
+    lineJoin:'round',
+    lineCap:'round'
+  }).addTo(map);
+  mapLayers.push(base);
+  const baseBounds=base.getBounds();
+  allBounds=allBounds?allBounds.extend(baseBounds):baseBounds;
+
+  // GPXまたは単色モードならベース線だけ。
+  if(track.type==='gpx'||colorMode.value==='single')return;
+
+  // 色分けは細かすぎるとドット状に見えるため、約200m単位でまとめて描く。
+  const chunkMeters=200;
+  let startIdx=0;
+  let lastChunkDist=pts[0].dist||0;
+
+  function drawChunk(a,b,color){
+    if(b<=a)return;
+    const seg=pts.slice(a,b+1).map(p=>[p.lat,p.lon]);
+    if(seg.length<2)return;
+    const poly=L.polyline(seg,{
+      color,
+      weight:5,
+      opacity:.92,
+      lineJoin:'round',
+      lineCap:'round'
+    }).addTo(map);
+    mapLayers.push(poly);
+  }
+
+  for(let i=1;i<pts.length;i++){
+    const d=pts[i].dist||0;
+    if(d-lastChunkDist>=chunkMeters || i===pts.length-1){
+      const mid=pts[Math.floor((startIdx+i)/2)]||pts[i];
+      const color=getColorByPoint(mid);
+      drawChunk(startIdx,i,color);
+      startIdx=i;
+      lastChunkDist=d;
+    }
+  }
+}
 function addTrackToMap(track){drawColoredTrack(track);const start=track.points[0],goal=track.points[track.points.length-1];const startM=L.marker([start.lat,start.lon],{icon:makeMarker('#0078ff','S')}).addTo(map),goalM=L.marker([goal.lat,goal.lon],{icon:makeMarker('#ff6b6b','G')}).addTo(map);mapLayers.push(startM,goalM);if(allBounds&&allBounds.isValid())map.fitBounds(allBounds,{padding:[32,32]})}
 function redrawMapTracks(){const keep=currentMarker;mapLayers.forEach(layer=>{if(layer!==keep)map.removeLayer(layer)});mapLayers=keep?[keep]:[];allBounds=null;tracks.forEach(addTrackToMap)}
 function drawElevation(trackList,markerDist=null){const {ctx,width,height}=prepareCanvas(elevationCanvas);ctx.clearRect(0,0,width,height);ctx.fillStyle='#111827';ctx.fillRect(0,0,width,height);ctx.fillStyle='#7d8590';ctx.font='10px -apple-system, Helvetica Neue, Arial, sans-serif';ctx.textAlign='left';ctx.textBaseline='top';ctx.fillText('ELEVATION PROFILE',12,8);if(!trackList.length){ctx.font='13px -apple-system, Helvetica Neue, Arial, sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText('GPX / TCXを読み込むと高低図を表示します',width/2,height/2);return}const padL=48,padR=16,padT=28,padB=48,plotW=Math.max(1,width-padL-padR),plotH=Math.max(1,height-padT-padB);let minEle=Infinity,maxEle=-Infinity,eleCount=0,totalDist=0;for(const t of trackList){totalDist+=t.dist||0;for(const p of t.points){if(Number.isFinite(p.ele)){if(p.ele<minEle)minEle=p.ele;if(p.ele>maxEle)maxEle=p.ele;eleCount++}}}if(eleCount<2||totalDist<=0)return;if(maxEle-minEle<1){maxEle+=.5;minEle-=.5}const eleRange=maxEle-minEle,minGrid=Math.floor(minEle/100)*100,maxGrid=Math.ceil(maxEle/100)*100;const labelMinGap=18;let lastEleLabelY=-9999;for(let ele=minGrid;ele<=maxGrid;ele+=100){const y=padT+((maxEle-ele)/eleRange)*plotH;ctx.strokeStyle=(ele%200===0)?'rgba(125,133,144,.35)':'rgba(125,133,144,.18)';ctx.beginPath();ctx.moveTo(padL,y);ctx.lineTo(width-padR,y);ctx.stroke();ctx.fillStyle='#7d8590';if(Math.abs(y-lastEleLabelY)>=labelMinGap||ele===minGrid||ele===maxGrid){ctx.textAlign='right';ctx.textBaseline='middle';ctx.fillText(ele+'m',padL-6,y);lastEleLabelY=y}}const totalKm=totalDist/1000,kmStep=totalKm<=50?5:(totalKm<=100?10:20);for(let km=0;km<=totalKm;km+=kmStep){const x=padL+((km*1000)/totalDist)*plotW;ctx.strokeStyle=(km%(kmStep*2)===0)?'rgba(125,133,144,.35)':'rgba(125,133,144,.18)';ctx.beginPath();ctx.moveTo(x,padT);ctx.lineTo(x,padT+plotH);ctx.stroke();ctx.save();ctx.translate(x,height-padB+36);ctx.rotate(-Math.PI/2);ctx.textAlign='left';ctx.textBaseline='middle';ctx.fillStyle='#7d8590';ctx.fillText(km+'km',0,0);ctx.restore()}let distOffset=0;for(const t of trackList){const pts=simplifyPoints(t.points,5000);ctx.beginPath();pts.forEach((p,i)=>{const x=padL+((distOffset+p.dist)/totalDist)*plotW,y=padT+((maxEle-p.ele)/eleRange)*plotH;if(i===0)ctx.moveTo(x,y);else ctx.lineTo(x,y)});ctx.strokeStyle=DEFAULT_COLOR;ctx.lineWidth=2.2;ctx.lineJoin='round';ctx.lineCap='round';ctx.stroke();distOffset+=t.dist}if(markerDist!==null&&totalDist>0){const mx=padL+(markerDist/totalDist)*plotW;ctx.strokeStyle='#ff2d55';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(mx,padT);ctx.lineTo(mx,padT+plotH);ctx.stroke();const p=getPointAtDistance(markerDist);if(p){const my=padT+((maxEle-p.ele)/eleRange)*plotH;ctx.beginPath();ctx.arc(mx,my,4,0,Math.PI*2);ctx.fillStyle='#ff2d55';ctx.fill();ctx.strokeStyle='#fff';ctx.lineWidth=1.5;ctx.stroke()}}}
