@@ -73,12 +73,153 @@ header{position:relative;display:flex;align-items:center;gap:8px;padding:8px 16p
   border-color:#0078ff;
 }
 
+
+.replay-btn{
+  min-width:72px;
+  height:34px;
+  border-radius:8px;
+  border:1px solid #1a5276;
+  background:#0f3460;
+  color:#e6edf3;
+  font-size:12px;
+  font-weight:700;
+  font-family:inherit;
+  cursor:pointer;
+  -webkit-appearance:none;
+  appearance:none;
+}
+.replay-btn.active{
+  background:#0078ff;
+  border-color:#0078ff;
+  color:#fff;
+}
+.replay-overlay{
+  position:absolute;
+  left:12px;
+  top:12px;
+  z-index:900;
+  background:rgba(17,24,39,.84);
+  border:1px solid rgba(15,52,96,.9);
+  border-radius:12px;
+  padding:10px 12px;
+  color:#e6edf3;
+  min-width:178px;
+  max-width:calc(100% - 24px);
+  -webkit-backdrop-filter:blur(8px);
+  backdrop-filter:blur(8px);
+  pointer-events:none;
+  display:none;
+}
+.replay-overlay.show{display:block}
+.replay-title{
+  font-size:13px;
+  font-weight:800;
+  color:#fff;
+  margin-bottom:8px;
+  overflow:hidden;
+  white-space:nowrap;
+  text-overflow:ellipsis;
+}
+.replay-grid{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:6px 12px;
+}
+.replay-item label{
+  display:block;
+  font-size:9px;
+  color:#7d8590;
+  letter-spacing:.08em;
+}
+.replay-item span{
+  display:block;
+  font-size:16px;
+  font-weight:800;
+  color:#0078ff;
+  font-variant-numeric:tabular-nums;
+}
+.replay-item.wide{grid-column:1/3}
+.replay-finish{
+  position:absolute;
+  inset:0;
+  z-index:1400;
+  background:rgba(10,15,28,.76);
+  display:none;
+  align-items:center;
+  justify-content:center;
+  text-align:center;
+  color:#fff;
+  -webkit-backdrop-filter:blur(4px);
+  backdrop-filter:blur(4px);
+  pointer-events:none;
+}
+.replay-finish.show{display:flex}
+.finish-card{
+  background:rgba(22,33,62,.92);
+  border:1px solid #0f3460;
+  border-radius:18px;
+  padding:22px 24px;
+  min-width:260px;
+  box-shadow:0 8px 30px rgba(0,0,0,.35);
+}
+.finish-card .finish-main{
+  font-size:34px;
+  font-weight:900;
+  color:#0078ff;
+  letter-spacing:.08em;
+  margin-bottom:10px;
+}
+.finish-card .finish-name{
+  font-size:15px;
+  font-weight:800;
+  margin-bottom:10px;
+}
+.finish-card .finish-stats{
+  font-size:18px;
+  font-weight:800;
+  line-height:1.6;
+  font-variant-numeric:tabular-nums;
+}
+body.replay-mode header{
+  padding-top:calc(6px + env(safe-area-inset-top));
+  padding-bottom:6px;
+}
+body.replay-mode .tile-control{
+  display:none;
+}
+body.replay-mode .stats{
+  gap:10px;
+}
+body.replay-mode .stat-label{
+  font-size:8px;
+}
+body.replay-mode .stat-value{
+  font-size:12px;
+}
+
 </style>
 </head>
 <body>
 <header><div class="logo">GPX//VIEWER</div><input type="file" id="fileInput" accept=".gpx,.tcx,*/*"><div class="stats" id="statsWrap" style="display:none"><div class="stat file-stat"><div class="stat-label">ファイル名</div><div class="stat-value" id="sName">—</div></div><div class="stat"><div class="stat-label">距離</div><div class="stat-value hi" id="sDist">—</div></div><div class="stat"><div class="stat-label">獲得標高</div><div class="stat-value" id="sEle">—</div></div></div><button class="clear-btn" id="clearBtn" style="display:none">✕</button></header>
 <div class="viewer"><div class="map-wrap">
     <div id="map"></div>
+    <div class="replay-overlay" id="replayOverlay">
+      <div class="replay-title" id="replayTitle">REPLAY</div>
+      <div class="replay-grid">
+        <div class="replay-item"><label>DIST</label><span id="replayDist">0.0km</span></div>
+        <div class="replay-item"><label>ELEV</label><span id="replayEle">0m</span></div>
+        <div class="replay-item"><label>PACE</label><span id="replayPace">—</span></div>
+        <div class="replay-item"><label>HR</label><span id="replayHr">—</span></div>
+        <div class="replay-item wide"><label>PROGRESS</label><span id="replayProgress">0%</span></div>
+      </div>
+    </div>
+    <div class="replay-finish" id="replayFinish">
+      <div class="finish-card">
+        <div class="finish-main">FINISH</div>
+        <div class="finish-name" id="finishName">—</div>
+        <div class="finish-stats" id="finishStats">—</div>
+      </div>
+    </div>
     <div class="tile-control" id="tileControl">
       <button type="button" data-tile="gsi_std" class="active">地理院 標準</button>
       <button type="button" data-tile="gsi_pale">地理院 淡色</button>
@@ -87,7 +228,7 @@ header{position:relative;display:flex;align-items:center;gap:8px;padding:8px 16p
       <button type="button" data-tile="opentopo">Topo</button>
     </div>
   </div><div class="elevation-wrap"><canvas id="elevationCanvas"></canvas></div></div>
-<div class="controls" id="controls"><button class="play-btn" id="playBtn" type="button">▶</button><input type="range" id="posSlider" min="0" max="1000" value="0"><div class="pos-info"><span id="posDist">0.0km</span><br><span id="posEle">0m</span></div><div class="selects"><select id="speedSelect">
+<div class="controls" id="controls"><button class="play-btn" id="playBtn" type="button">▶</button><button class="replay-btn" id="replayBtn" type="button">REPLAY</button><input type="range" id="posSlider" min="0" max="1000" value="0"><div class="pos-info"><span id="posDist">0.0km</span><br><span id="posEle">0m</span></div><div class="selects"><select id="speedSelect">
       <option value="0.5">0.5x</option>
       <option value="1" selected>1x</option>
       <option value="2">2x</option>
@@ -96,8 +237,18 @@ header{position:relative;display:flex;align-items:center;gap:8px;padding:8px 16p
 <div class="toast" id="toast"></div>
 <script>
 (function(){
-const fileInput=document.getElementById('fileInput'),elevationCanvas=document.getElementById('elevationCanvas'),statsWrap=document.getElementById('statsWrap'),clearBtn=document.getElementById('clearBtn'),controls=document.getElementById('controls'),playBtn=document.getElementById('playBtn'),posSlider=document.getElementById('posSlider'),posDist=document.getElementById('posDist'),posEle=document.getElementById('posEle'),speedSelect=document.getElementById('speedSelect'),colorMode=document.getElementById('colorMode'),legend=document.getElementById('legend');
-let tracks=[],mapLayers=[],currentMarker=null,currentDistance=0,playTimer=null,isPlaying=false,playStartReal=0,playStartActivity=0,allBounds=null;
+const fileInput=document.getElementById('fileInput'),elevationCanvas=document.getElementById('elevationCanvas'),statsWrap=document.getElementById('statsWrap'),clearBtn=document.getElementById('clearBtn'),controls=document.getElementById('controls'),playBtn=document.getElementById('playBtn'),replayBtn=document.getElementById('replayBtn'),posSlider=document.getElementById('posSlider'),posDist=document.getElementById('posDist'),posEle=document.getElementById('posEle'),speedSelect=document.getElementById('speedSelect'),colorMode=document.getElementById('colorMode'),legend=document.getElementById('legend'),
+replayOverlay=document.getElementById('replayOverlay'),
+replayTitle=document.getElementById('replayTitle'),
+replayDist=document.getElementById('replayDist'),
+replayEle=document.getElementById('replayEle'),
+replayPace=document.getElementById('replayPace'),
+replayHr=document.getElementById('replayHr'),
+replayProgress=document.getElementById('replayProgress'),
+replayFinish=document.getElementById('replayFinish'),
+finishName=document.getElementById('finishName'),
+finishStats=document.getElementById('finishStats');
+let tracks=[],mapLayers=[],currentMarker=null,currentDistance=0,playTimer=null,isPlaying=false,playStartReal=0,playStartActivity=0,allBounds=null,isReplayMode=false;
 const DEFAULT_COLOR='#0078ff';
 const map=L.map('map',{center:[36.2,138.2],zoom:5,zoomControl:true,attributionControl:true});
 const TILE_DEFS={
@@ -348,7 +499,7 @@ function drawColoredTrack(track){
   }
 }
 function addTrackToMap(track){drawColoredTrack(track);const start=track.points[0],goal=track.points[track.points.length-1];const startM=L.marker([start.lat,start.lon],{icon:makeMarker('#0078ff','S')}).addTo(map),goalM=L.marker([goal.lat,goal.lon],{icon:makeMarker('#ff6b6b','G')}).addTo(map);mapLayers.push(startM,goalM);if(allBounds&&allBounds.isValid())map.fitBounds(allBounds,{padding:[32,32]})}
-function redrawMapTracks(){const keep=currentMarker;mapLayers.forEach(layer=>{if(layer!==keep)map.removeLayer(layer)});mapLayers=keep?[keep]:[];allBounds=null;tracks.forEach(addTrackToMap)}
+function redrawMapTracks(){const keep=currentMarker;mapLayers.forEach(layer=>{if(layer!==keep)map.removeLayer(layer)});mapLayers=keep?[keep]:[];allBounds=null,isReplayMode=false;tracks.forEach(addTrackToMap)}
 function drawElevation(trackList,markerDist=null){const {ctx,width,height}=prepareCanvas(elevationCanvas);ctx.clearRect(0,0,width,height);ctx.fillStyle='#111827';ctx.fillRect(0,0,width,height);ctx.fillStyle='#7d8590';ctx.font='10px -apple-system, Helvetica Neue, Arial, sans-serif';ctx.textAlign='left';ctx.textBaseline='top';ctx.fillText('ELEVATION PROFILE',12,8);if(!trackList.length){ctx.font='13px -apple-system, Helvetica Neue, Arial, sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText('GPX / TCXを読み込むと高低図を表示します',width/2,height/2);return}const padL=48,padR=16,padT=28,padB=48,plotW=Math.max(1,width-padL-padR),plotH=Math.max(1,height-padT-padB);let minEle=Infinity,maxEle=-Infinity,eleCount=0,totalDist=0;for(const t of trackList){totalDist+=t.dist||0;for(const p of t.points){if(Number.isFinite(p.ele)){if(p.ele<minEle)minEle=p.ele;if(p.ele>maxEle)maxEle=p.ele;eleCount++}}}if(eleCount<2||totalDist<=0)return;if(maxEle-minEle<1){maxEle+=.5;minEle-=.5}const eleRange=maxEle-minEle,minGrid=Math.floor(minEle/100)*100,maxGrid=Math.ceil(maxEle/100)*100;const labelMinGap=18;let lastEleLabelY=-9999;for(let ele=minGrid;ele<=maxGrid;ele+=100){const y=padT+((maxEle-ele)/eleRange)*plotH;ctx.strokeStyle=(ele%200===0)?'rgba(125,133,144,.35)':'rgba(125,133,144,.18)';ctx.beginPath();ctx.moveTo(padL,y);ctx.lineTo(width-padR,y);ctx.stroke();ctx.fillStyle='#7d8590';if(Math.abs(y-lastEleLabelY)>=labelMinGap||ele===minGrid||ele===maxGrid){ctx.textAlign='right';ctx.textBaseline='middle';ctx.fillText(ele+'m',padL-6,y);lastEleLabelY=y}}const totalKm=totalDist/1000,kmStep=totalKm<=50?5:(totalKm<=100?10:20);for(let km=0;km<=totalKm;km+=kmStep){const x=padL+((km*1000)/totalDist)*plotW;ctx.strokeStyle=(km%(kmStep*2)===0)?'rgba(125,133,144,.35)':'rgba(125,133,144,.18)';ctx.beginPath();ctx.moveTo(x,padT);ctx.lineTo(x,padT+plotH);ctx.stroke();ctx.save();ctx.translate(x,height-padB+36);ctx.rotate(-Math.PI/2);ctx.textAlign='left';ctx.textBaseline='middle';ctx.fillStyle='#7d8590';ctx.fillText(km+'km',0,0);ctx.restore()}let distOffset=0;for(const t of trackList){const pts=simplifyPoints(t.points,5000);ctx.beginPath();pts.forEach((p,i)=>{const x=padL+((distOffset+p.dist)/totalDist)*plotW,y=padT+((maxEle-p.ele)/eleRange)*plotH;if(i===0)ctx.moveTo(x,y);else ctx.lineTo(x,y)});ctx.strokeStyle=DEFAULT_COLOR;ctx.lineWidth=2.2;ctx.lineJoin='round';ctx.lineCap='round';ctx.stroke();distOffset+=t.dist}if(markerDist!==null&&totalDist>0){const mx=padL+(markerDist/totalDist)*plotW;ctx.strokeStyle='#ff2d55';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(mx,padT);ctx.lineTo(mx,padT+plotH);ctx.stroke();const p=getPointAtDistance(markerDist);if(p){const my=padT+((maxEle-p.ele)/eleRange)*plotH;ctx.beginPath();ctx.arc(mx,my,4,0,Math.PI*2);ctx.fillStyle='#ff2d55';ctx.fill();ctx.strokeStyle='#fff';ctx.lineWidth=1.5;ctx.stroke()}}}
 function updateUI(last){const has=tracks.length>0;statsWrap.style.display=has?'flex':'none';clearBtn.style.display=has?'':'none';if(!has)return;const totalDist=tracks.reduce((s,t)=>s+t.dist,0),totalGain=tracks.reduce((s,t)=>s+t.gain,0);document.getElementById('sName').textContent=last?last.name:tracks[tracks.length-1].name;document.getElementById('sDist').textContent=fmtDist(totalDist);document.getElementById('sEle').textContent=Math.round(totalGain)+' m'}
 function updateLegend(){
@@ -363,7 +514,56 @@ function updateLegend(){
   else if(m==='trail')legend.textContent='速度: 青8+ 緑5+ 黄2+ 赤 / 1x=30秒';
   else legend.textContent='単色表示 / 1x=30秒';
 }
-function updateCurrentPosition(p){if(!p)return;const c=getColorByPoint(p);if(!currentMarker){currentMarker=L.marker([p.lat,p.lon],{icon:makeCurrentIcon('#ff2d55'),zIndexOffset:1000}).addTo(map);mapLayers.push(currentMarker)}else{currentMarker.setIcon(makeCurrentIcon('#ff2d55'));currentMarker.setLatLng([p.lat,p.lon])}const currentPoint=map.latLngToContainerPoint([p.lat,p.lon]),mapSize=map.getSize(),targetPoint=L.point(mapSize.x*.5,mapSize.y*.5),panOffset=currentPoint.subtract(targetPoint);map.panBy(panOffset,{animate:false});currentDistance=p.dist||0;posDist.textContent=(currentDistance/1000).toFixed(1)+'km';posEle.textContent=Math.round(p.ele)+'m';drawElevation(tracks,currentDistance)}
+
+function fmtPaceFromSpeed(speedKmh){
+  if(!Number.isFinite(speedKmh)||speedKmh<=0)return '—';
+  const pace=60/speedKmh;
+  const min=Math.floor(pace);
+  const sec=Math.round((pace-min)*60);
+  return `${min}:${String(sec).padStart(2,'0')}/km`;
+}
+function getProgressPercent(){
+  const total=getTotalDistance();
+  if(!total)return 0;
+  return Math.max(0,Math.min(100,(currentDistance/total)*100));
+}
+function updateReplayOverlay(p){
+  if(!isReplayMode||!p)return;
+  replayOverlay.classList.add('show');
+  replayTitle.textContent=tracks[0]?.name||'REPLAY';
+  replayDist.textContent=(p.dist/1000).toFixed(1)+'km';
+  replayEle.textContent=Math.round(p.ele)+'m';
+  replayPace.textContent=fmtPaceFromSpeed(p.speedKmh);
+  replayHr.textContent=Number.isFinite(p.hr)?Math.round(p.hr)+'bpm':'—';
+  replayProgress.textContent=Math.round(getProgressPercent())+'%';
+}
+function showFinishOverlay(){
+  if(!tracks.length||!isReplayMode)return;
+  const t=tracks[0];
+  replayFinish.classList.add('show');
+  finishName.textContent=t.name||'FINISH';
+  finishStats.innerHTML=`${fmtDist(t.dist)}<br>D+ ${Math.round(t.gain)}m`;
+  setTimeout(()=>replayFinish.classList.remove('show'),4500);
+}
+function setReplayMode(on){
+  isReplayMode=on;
+  document.body.classList.toggle('replay-mode',on);
+  replayBtn.classList.toggle('active',on);
+  replayOverlay.classList.toggle('show',on&&tracks.length>0);
+  if(!on)replayFinish.classList.remove('show');
+  setTimeout(()=>{map.invalidateSize();updateCurrentPositionFromSlider()},80);
+}
+function toggleReplayMode(){
+  setReplayMode(!isReplayMode);
+}
+function startReplayFromBeginning(){
+  if(!tracks.length)return;
+  replayFinish.classList.remove('show');
+  posSlider.value=0;
+  updateCurrentPositionByProgress(0);
+  startPlayback();
+}
+function updateCurrentPosition(p){if(!p)return;const c=getColorByPoint(p);if(!currentMarker){currentMarker=L.marker([p.lat,p.lon],{icon:makeCurrentIcon('#ff2d55'),zIndexOffset:1000}).addTo(map);mapLayers.push(currentMarker)}else{currentMarker.setIcon(makeCurrentIcon('#ff2d55'));currentMarker.setLatLng([p.lat,p.lon])}const currentPoint=map.latLngToContainerPoint([p.lat,p.lon]),mapSize=map.getSize(),targetPoint=L.point(mapSize.x*.5,mapSize.y*.5),panOffset=currentPoint.subtract(targetPoint);map.panBy(panOffset,{animate:false});currentDistance=p.dist||0;posDist.textContent=(currentDistance/1000).toFixed(1)+'km';posEle.textContent=Math.round(p.ele)+'m';drawElevation(tracks,currentDistance);updateReplayOverlay(p)}
 function updateCurrentPositionByProgress(progress){
   const t=tracks[0];
   if(!t)return;
@@ -409,6 +609,7 @@ function startPlayback(){
       posSlider.value=1000;
       updateCurrentPositionByProgress(progress);
       stopPlayback();
+      showFinishOverlay();
       return;
     }
 
@@ -417,8 +618,9 @@ function startPlayback(){
   },50);
 }
 function togglePlayback(){if(isPlaying)stopPlayback();else startPlayback()}
-function loadFile(file){stopPlayback();const lower=file.name.toLowerCase();if(!lower.endsWith('.gpx')&&!lower.endsWith('.tcx')){showToast(`${file.name} はGPX/TCXファイルではありません`);return}const reader=new FileReader();reader.onload=e=>{try{const parsed=lower.endsWith('.tcx')?parseTCX(e.target.result):parseGPX(e.target.result);let points=enrichSpeed(parsed.points);if(points.length<2){showToast(`${file.name}: トラックポイントが見つかりませんでした`);return}const {dist,gain}=calcStats(points),times=points.map(p=>p.time).filter(v=>Number.isFinite(v)),hasTime=(parsed.type==='tcx'&&times.length>=2),startTime=hasTime?times[0]:null,endTime=hasTime?times[times.length-1]:null,elapsed=hasTime?(endTime-startTime)/1000:0,track={name:parsed.name,points,dist,gain,type:parsed.type,hasTime,startTime,endTime,elapsed};mapLayers.forEach(layer=>map.removeLayer(layer));tracks=[];mapLayers=[];allBounds=null;currentMarker=null;currentDistance=0;tracks.push(track);addTrackToMap(track);controls.classList.add('show');posSlider.value=0;updateUI(track);updateLegend();updateCurrentPositionFromSlider()}catch(err){console.error(err);showToast(`読み込みエラー: ${err.message}`)}};reader.onerror=()=>showToast(`${file.name}: 読み込みに失敗しました`);reader.readAsText(file,'UTF-8')}
+function loadFile(file){stopPlayback();const lower=file.name.toLowerCase();if(!lower.endsWith('.gpx')&&!lower.endsWith('.tcx')){showToast(`${file.name} はGPX/TCXファイルではありません`);return}const reader=new FileReader();reader.onload=e=>{try{const parsed=lower.endsWith('.tcx')?parseTCX(e.target.result):parseGPX(e.target.result);let points=enrichSpeed(parsed.points);if(points.length<2){showToast(`${file.name}: トラックポイントが見つかりませんでした`);return}const {dist,gain}=calcStats(points),times=points.map(p=>p.time).filter(v=>Number.isFinite(v)),hasTime=(parsed.type==='tcx'&&times.length>=2),startTime=hasTime?times[0]:null,endTime=hasTime?times[times.length-1]:null,elapsed=hasTime?(endTime-startTime)/1000:0,track={name:parsed.name,points,dist,gain,type:parsed.type,hasTime,startTime,endTime,elapsed};mapLayers.forEach(layer=>map.removeLayer(layer));tracks=[];mapLayers=[];allBounds=null,isReplayMode=false;currentMarker=null;currentDistance=0;tracks.push(track);addTrackToMap(track);controls.classList.add('show');posSlider.value=0;updateUI(track);updateLegend();replayFinish.classList.remove('show');updateCurrentPositionFromSlider();if(isReplayMode)replayOverlay.classList.add('show')}catch(err){console.error(err);showToast(`読み込みエラー: ${err.message}`)}};reader.onerror=()=>showToast(`${file.name}: 読み込みに失敗しました`);reader.readAsText(file,'UTF-8')}
 document.querySelectorAll('#tileControl button').forEach(btn=>btn.addEventListener('click',()=>setBaseTile(btn.dataset.tile)));
-posSlider.addEventListener('input',()=>{stopPlayback();updateCurrentPositionFromSlider()});playBtn.addEventListener('click',togglePlayback);speedSelect.addEventListener('change',()=>{if(isPlaying)startPlayback()});colorMode.addEventListener('change',()=>{updateLegend();redrawMapTracks();updateCurrentPositionFromSlider()});fileInput.addEventListener('change',e=>{const file=e.target.files&&e.target.files[0];if(file)loadFile(file);e.target.value=''});clearBtn.addEventListener('click',()=>{stopPlayback();mapLayers.forEach(layer=>map.removeLayer(layer));tracks=[];mapLayers=[];currentMarker=null;allBounds=null;controls.classList.remove('show');statsWrap.style.display='none';clearBtn.style.display='none';posSlider.value=0;posDist.textContent='0.0km';posEle.textContent='0m';drawElevation(tracks)});window.addEventListener('resize',()=>setTimeout(()=>{map.invalidateSize();drawElevation(tracks,currentDistance)},100));drawElevation(tracks);
+replayBtn.addEventListener('click',()=>{toggleReplayMode()});
+posSlider.addEventListener('input',()=>{stopPlayback();updateCurrentPositionFromSlider()});playBtn.addEventListener('click',()=>{if(isReplayMode&&!isPlaying&&Number(posSlider.value)>=1000){posSlider.value=0;updateCurrentPositionByProgress(0)}togglePlayback()});speedSelect.addEventListener('change',()=>{if(isPlaying)startPlayback()});colorMode.addEventListener('change',()=>{updateLegend();redrawMapTracks();updateCurrentPositionFromSlider()});fileInput.addEventListener('change',e=>{const file=e.target.files&&e.target.files[0];if(file)loadFile(file);e.target.value=''});clearBtn.addEventListener('click',()=>{stopPlayback();mapLayers.forEach(layer=>map.removeLayer(layer));tracks=[];mapLayers=[];currentMarker=null;allBounds=null,isReplayMode=false;controls.classList.remove('show');replayOverlay.classList.remove('show');replayFinish.classList.remove('show');statsWrap.style.display='none';clearBtn.style.display='none';posSlider.value=0;posDist.textContent='0.0km';posEle.textContent='0m';drawElevation(tracks)});window.addEventListener('resize',()=>setTimeout(()=>{map.invalidateSize();drawElevation(tracks,currentDistance)},100));drawElevation(tracks);
 })();
 </script></body></html>
