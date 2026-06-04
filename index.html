@@ -195,7 +195,7 @@ body.replay-mode .stat-value{
   align-items:flex-end;
   gap:4px;
 }
-.tile-toggle{
+.tile-toggle,.fit-toggle{
   min-width:46px;
   height:34px;
   padding:0 10px;
@@ -244,6 +244,15 @@ body.replay-mode .stat-value{
   background:#0078ff;
   border-color:#0078ff;
 }
+
+.fit-toggle{
+  margin-top:2px;
+  background:rgba(15,52,96,.88);
+}
+.fit-toggle:active,.tile-toggle:active{
+  transform:scale(.97);
+}
+
 </style>
 </head>
 <body>
@@ -269,6 +278,7 @@ body.replay-mode .stat-value{
     </div>
     <div class="tile-control" id="tileControl">
       <button type="button" class="tile-toggle" id="tileToggle">地図</button>
+      <button type="button" class="fit-toggle" id="fitBtn">全体</button>
       <div class="tile-menu" id="tileMenu">
         <button type="button" data-tile="gsi_std" class="active">地理院 標準</button>
         <button type="button" data-tile="gsi_pale">地理院 淡色</button>
@@ -288,7 +298,7 @@ body.replay-mode .stat-value{
       <option value="1" selected>1x</option>
       <option value="2">2x</option>
       <option value="4">4x</option>
-    </select><select id="colorMode"><option value="single">単色</option><option value="run">ラン（ペース）</option><option value="trail" selected>トレラン（速度）</option><option value="hr">心拍</option></select><div class="legend" id="legend">1x=30秒再生</div></div></div>
+    </select><select id="colorMode"><option value="single">単色</option><option value="run" selected>ラン（ペース）</option><option value="trail">トレラン（速度）</option><option value="hr">心拍</option></select><div class="legend" id="legend">ラン: 青=〜5:00/km 緑=〜6:00 黄=〜7:00 赤=7:00超 / 1x=30秒</div></div></div>
 <div class="toast" id="toast"></div>
 <script>
 (function(){
@@ -338,6 +348,11 @@ function setBaseTile(key){
   });
 }
 setBaseTile('gsi_std');
+function fitTrackBounds(){
+  if(allBounds&&allBounds.isValid()){
+    map.fitBounds(allBounds,{padding:[34,34],animate:false});
+  }
+}
 function showToast(msg){const t=document.getElementById('toast');t.textContent=msg;t.style.display='block';setTimeout(()=>{t.style.display='none'},4000)}
 function fmtDist(m){return m>=1000?(m/1000).toFixed(2)+' km':Math.round(m)+' m'}
 function haversine(a,b){const R=6371000,r=Math.PI/180,dLat=(b.lat-a.lat)*r,dLon=(b.lon-a.lon)*r,s=Math.sin(dLat/2)**2+Math.cos(a.lat*r)*Math.cos(b.lat*r)*Math.sin(dLon/2)**2;return R*2*Math.atan2(Math.sqrt(s),Math.sqrt(1-s))}
@@ -560,14 +575,14 @@ function updateUI(last){const has=tracks.length>0;statsWrap.style.display=has?'f
 function updateLegend(){
   const trackType=tracks[0]?.type||'gpx';
   if(trackType==='gpx'){
-    legend.textContent='GPXは青単色 / 1x=30秒';
+    legend.textContent='GPX: 青単色・距離ベース再生 / 1x=30秒';
     return;
   }
   const m=colorMode.value;
-  if(m==='hr')legend.textContent='心拍: 青<120 緑<140 黄<155 赤 / 1x=30秒';
-  else if(m==='run')legend.textContent='ペース: 青≤5:00 緑≤6:00 黄≤7:00 赤 / 1x=30秒';
-  else if(m==='trail')legend.textContent='速度: 青8+ 緑5+ 黄2+ 赤 / 1x=30秒';
-  else legend.textContent='単色表示 / 1x=30秒';
+  if(m==='hr')legend.textContent='心拍: 青=<120 緑=120〜139 黄=140〜154 赤=155以上 / 1x=30秒';
+  else if(m==='run')legend.textContent='ラン: 青=〜5:00/km 緑=〜6:00 黄=〜7:00 赤=7:00超 / 1x=30秒';
+  else if(m==='trail')legend.textContent='トレラン: 青=8km/h以上 緑=5〜8 黄=2〜5 赤=2未満 / 1x=30秒';
+  else legend.textContent='単色: 軌跡を青で表示 / 1x=30秒';
 }
 
 function fmtPaceFromSpeed(speedKmh){
@@ -712,7 +727,7 @@ function startPlayback(){
   },50);
 }
 function togglePlayback(){if(isPlaying)stopPlayback();else startPlayback()}
-function loadFile(file){playEnded=false;stopPlayback();const lower=file.name.toLowerCase();if(!lower.endsWith('.gpx')&&!lower.endsWith('.tcx')){showToast(`${file.name} はGPX/TCXファイルではありません`);return}const reader=new FileReader();reader.onload=e=>{try{const parsed=lower.endsWith('.tcx')?parseTCX(e.target.result):parseGPX(e.target.result);let points=enrichSpeed(parsed.points);if(points.length<2){showToast(`${file.name}: トラックポイントが見つかりませんでした`);return}const {dist,gain}=calcStats(points),times=points.map(p=>p.time).filter(v=>Number.isFinite(v)),hasTime=(parsed.type==='tcx'&&times.length>=2),startTime=hasTime?times[0]:null,endTime=hasTime?times[times.length-1]:null,elapsed=hasTime?(endTime-startTime)/1000:0,track={name:parsed.name,points,dist,gain,type:parsed.type,hasTime,startTime,endTime,elapsed};mapLayers.forEach(layer=>map.removeLayer(layer));tracks=[];mapLayers=[];allBounds=null,isReplayMode=false,playEnded=false;currentMarker=null;currentDistance=0;tracks.push(track);addTrackToMap(track);controls.classList.add('show');posSlider.value=0;updateUI(track);updateLegend();replayFinish.classList.remove('show');updateCurrentPositionFromSlider()}catch(err){console.error(err);showToast(`読み込みエラー: ${err.message}`)}};reader.onerror=()=>showToast(`${file.name}: 読み込みに失敗しました`);reader.readAsText(file,'UTF-8')}
+function loadFile(file){playEnded=false;stopPlayback();const lower=file.name.toLowerCase();if(!lower.endsWith('.gpx')&&!lower.endsWith('.tcx')){showToast(`${file.name} はGPX/TCXファイルではありません`);return}const reader=new FileReader();reader.onload=e=>{try{const parsed=lower.endsWith('.tcx')?parseTCX(e.target.result):parseGPX(e.target.result);let points=enrichSpeed(parsed.points);if(points.length<2){showToast(`${file.name}: トラックポイントが見つかりませんでした`);return}const {dist,gain}=calcStats(points),times=points.map(p=>p.time).filter(v=>Number.isFinite(v)),hasTime=(parsed.type==='tcx'&&times.length>=2),startTime=hasTime?times[0]:null,endTime=hasTime?times[times.length-1]:null,elapsed=hasTime?(endTime-startTime)/1000:0,track={name:parsed.name,points,dist,gain,type:parsed.type,hasTime,startTime,endTime,elapsed};mapLayers.forEach(layer=>map.removeLayer(layer));tracks=[];mapLayers=[];allBounds=null,isReplayMode=false,playEnded=false;currentMarker=null;currentDistance=0;tracks.push(track);addTrackToMap(track);controls.classList.add('show');posSlider.value=0;updateUI(track);updateLegend();replayFinish.classList.remove('show');updateCurrentPositionFromSlider();setTimeout(()=>{map.invalidateSize();fitTrackBounds()},120)}catch(err){console.error(err);showToast(`読み込みエラー: ${err.message}`)}};reader.onerror=()=>showToast(`${file.name}: 読み込みに失敗しました`);reader.readAsText(file,'UTF-8')}
 document.getElementById('tileToggle').addEventListener('click',e=>{
   e.stopPropagation();
   document.getElementById('tileControl').classList.toggle('open');
@@ -726,6 +741,7 @@ document.addEventListener('click',e=>{
   const tc=document.getElementById('tileControl');
   if(tc&&!tc.contains(e.target))tc.classList.remove('open');
 });
+document.getElementById('fitBtn').addEventListener('click',e=>{e.stopPropagation();fitTrackBounds()});
 posSlider.addEventListener('input',()=>{playEnded=false;stopPlayback();updateCurrentPositionFromSlider()});playBtn.addEventListener('click',()=>{
   if(playEnded&&!isPlaying){
     posSlider.value=0;
