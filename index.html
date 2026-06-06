@@ -7,6 +7,7 @@
 <!-- build: gpx-distance-only / tcx-time-replay -->
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+<script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
 html,body{height:100%;height:-webkit-fill-available}
@@ -277,6 +278,30 @@ body.profile-3d .elevation-wrap{
   background:radial-gradient(circle at 50% 15%,#1f2d46 0%,#111827 58%,#0b1020 100%);
 }
 
+
+#threeProfile{
+  position:absolute;
+  inset:0;
+  display:none;
+  background:#070b14;
+}
+body.profile-three #elevationCanvas{
+  display:none;
+}
+body.profile-three #threeProfile{
+  display:block;
+}
+.three-label{
+  position:absolute;
+  left:10px;
+  top:8px;
+  z-index:2;
+  font-size:10px;
+  color:#7d8590;
+  pointer-events:none;
+  font-family:-apple-system,'Helvetica Neue',Arial,sans-serif;
+}
+
 </style>
 </head>
 <body>
@@ -311,7 +336,7 @@ body.profile-3d .elevation-wrap{
         <button type="button" data-tile="opentopo">Topo</button>
       </div>
     </div>
-  </div><div class="elevation-wrap"><canvas id="elevationCanvas"></canvas></div></div>
+  </div><div class="elevation-wrap"><canvas id="elevationCanvas"></canvas><div id="threeProfile"></div></div></div>
 <div class="controls" id="controls"><button class="play-btn" id="playBtn" type="button">▶</button><div class="pos-info">
     <div class="meter-card dist"><label>DIST</label><span id="posDist">0.0km</span><div class="meter-bar"><div class="meter-fill" id="distFill"></div></div></div>
     <div class="meter-card ele"><label>ELEV</label><span id="posEle">0m</span><div class="meter-bar"><div class="meter-fill" id="eleFill"></div></div></div>
@@ -326,7 +351,7 @@ body.profile-3d .elevation-wrap{
 <div class="toast" id="toast"></div>
 <script>
 (function(){
-const fileInput=document.getElementById('fileInput'),elevationCanvas=document.getElementById('elevationCanvas'),statsWrap=document.getElementById('statsWrap'),clearBtn=document.getElementById('clearBtn'),controls=document.getElementById('controls'),playBtn=document.getElementById('playBtn'),posSlider=document.getElementById('posSlider'),posDist=document.getElementById('posDist'),posEle=document.getElementById('posEle'),posPace=document.getElementById('posPace'),posHr=document.getElementById('posHr'),distFill=document.getElementById('distFill'),eleFill=document.getElementById('eleFill'),paceFill=document.getElementById('paceFill'),hrFill=document.getElementById('hrFill'),speedSelect=document.getElementById('speedSelect'),colorMode=document.getElementById('colorMode'),view3dBtn=document.getElementById('view3dBtn'),legend=document.getElementById('legend'),
+const fileInput=document.getElementById('fileInput'),elevationCanvas=document.getElementById('elevationCanvas'),threeProfile=document.getElementById('threeProfile'),statsWrap=document.getElementById('statsWrap'),clearBtn=document.getElementById('clearBtn'),controls=document.getElementById('controls'),playBtn=document.getElementById('playBtn'),posSlider=document.getElementById('posSlider'),posDist=document.getElementById('posDist'),posEle=document.getElementById('posEle'),posPace=document.getElementById('posPace'),posHr=document.getElementById('posHr'),distFill=document.getElementById('distFill'),eleFill=document.getElementById('eleFill'),paceFill=document.getElementById('paceFill'),hrFill=document.getElementById('hrFill'),speedSelect=document.getElementById('speedSelect'),colorMode=document.getElementById('colorMode'),view3dBtn=document.getElementById('view3dBtn'),legend=document.getElementById('legend'),
 replayOverlay=document.getElementById('replayOverlay'),
 replayTitle=document.getElementById('replayTitle'),
 replayDist=document.getElementById('replayDist'),
@@ -337,7 +362,7 @@ replayProgress=document.getElementById('replayProgress'),
 replayFinish=document.getElementById('replayFinish'),
 finishName=document.getElementById('finishName'),
 finishStats=document.getElementById('finishStats');
-let tracks=[],mapLayers=[],currentMarker=null,currentDistance=0,playTimer=null,isPlaying=false,playStartReal=0,playStartActivity=0,allBounds=null,profile3DMode=false,isReplayMode=false,playEnded=false;
+let tracks=[],mapLayers=[],currentMarker=null,currentDistance=0,playTimer=null,isPlaying=false,playStartReal=0,playStartActivity=0,allBounds=null,profile3DMode=false,threeRenderer=null,threeScene=null,threeCamera=null,threeLine=null,threeMarker=null,threeTrackData=null,threeLabel=null,isReplayMode=false,playEnded=false;
 const DEFAULT_COLOR='#0078ff';
 const map=L.map('map',{center:[36.2,138.2],zoom:5,zoomControl:true,attributionControl:true});
 const TILE_DEFS={
@@ -595,6 +620,155 @@ function drawColoredTrack(track){
 function addTrackToMap(track){drawColoredTrack(track);const start=track.points[0],goal=track.points[track.points.length-1];const startM=L.marker([start.lat,start.lon],{icon:makeMarker('#0078ff','S')}).addTo(map),goalM=L.marker([goal.lat,goal.lon],{icon:makeMarker('#ff6b6b','G')}).addTo(map);mapLayers.push(startM,goalM);if(allBounds&&allBounds.isValid())map.fitBounds(allBounds,{padding:[32,32]})}
 function redrawMapTracks(){const keep=currentMarker;mapLayers.forEach(layer=>{if(layer!==keep)map.removeLayer(layer)});mapLayers=keep?[keep]:[];allBounds=null,isReplayMode=false,playEnded=false;tracks.forEach(addTrackToMap)}
 
+
+function ensureThreeProfile(){
+  if(typeof THREE==='undefined'){
+    showToast('Three.jsの読み込みに失敗しました');
+    return false;
+  }
+  const rect=threeProfile.getBoundingClientRect();
+  const w=Math.max(1,Math.round(rect.width));
+  const h=Math.max(1,Math.round(rect.height));
+
+  if(!threeRenderer){
+    threeRenderer=new THREE.WebGLRenderer({antialias:true,alpha:false});
+    threeRenderer.setPixelRatio(Math.min(window.devicePixelRatio||1,2));
+    threeProfile.appendChild(threeRenderer.domElement);
+
+    threeLabel=document.createElement('div');
+    threeLabel.className='three-label';
+    threeLabel.textContent='THREE.JS 3D ELEVATION';
+    threeProfile.appendChild(threeLabel);
+  }
+
+  threeRenderer.setSize(w,h,false);
+  return true;
+}
+function buildThreeProfile(trackList){
+  if(!ensureThreeProfile())return;
+  if(!trackList.length)return;
+
+  const t=trackList[0];
+  const raw=t.points||[];
+  if(raw.length<2)return;
+
+  const pts=simplifyPoints(raw,480);
+  let minEle=Infinity,maxEle=-Infinity,totalDist=t.dist||getTotalDistance();
+  for(const p of pts){
+    if(Number.isFinite(p.ele)){
+      minEle=Math.min(minEle,p.ele);
+      maxEle=Math.max(maxEle,p.ele);
+    }
+  }
+  if(!Number.isFinite(minEle)||!Number.isFinite(maxEle)||totalDist<=0)return;
+  if(maxEle-minEle<1){maxEle+=.5;minEle-=.5}
+
+  const eleRange=maxEle-minEle;
+  const points3=[];
+  for(const p of pts){
+    const x=((p.dist||0)/totalDist-.5)*12;
+    const y=((p.ele-minEle)/eleRange)*4.2;
+    const z=(((p.dist||0)/totalDist)-.5)*-3.0;
+    points3.push(new THREE.Vector3(x,y,z));
+  }
+
+  threeTrackData={pts,points3,totalDist,minEle,maxEle,eleRange};
+
+  threeScene=new THREE.Scene();
+  threeScene.background=new THREE.Color(0x070b14);
+
+  const rect=threeProfile.getBoundingClientRect();
+  const aspect=Math.max(1,rect.width)/Math.max(1,rect.height);
+  threeCamera=new THREE.PerspectiveCamera(45,aspect,0.1,100);
+  threeCamera.position.set(0,4.3,10.5);
+  threeCamera.lookAt(0,1.4,0);
+
+  const ambient=new THREE.AmbientLight(0xffffff,.78);
+  threeScene.add(ambient);
+  const dir=new THREE.DirectionalLight(0xffffff,.75);
+  dir.position.set(3,5,4);
+  threeScene.add(dir);
+
+  // ground grid
+  const grid=new THREE.GridHelper(14,14,0x24466c,0x18263a);
+  grid.position.y=-.04;
+  grid.rotation.x=0;
+  threeScene.add(grid);
+
+  // blue ridge line
+  const curve=new THREE.CatmullRomCurve3(points3);
+  const smooth=curve.getPoints(Math.min(900,points3.length*4));
+  const geo=new THREE.BufferGeometry().setFromPoints(smooth);
+  const mat=new THREE.LineBasicMaterial({color:0x0078ff,linewidth:3});
+  threeLine=new THREE.Line(geo,mat);
+  threeScene.add(threeLine);
+
+  // vertical wall under the profile
+  const wallVerts=[];
+  const wallColors=[];
+  for(const v of smooth){
+    wallVerts.push(v.x,v.y,v.z);
+    wallVerts.push(v.x,0,v.z);
+    wallColors.push(0.0,0.47,1.0, 0.0,0.12,0.25);
+  }
+  const wallGeo=new THREE.BufferGeometry();
+  wallGeo.setAttribute('position',new THREE.Float32BufferAttribute(wallVerts,3));
+  wallGeo.setAttribute('color',new THREE.Float32BufferAttribute(wallColors,3));
+  const wallMat=new THREE.LineBasicMaterial({vertexColors:true,transparent:true,opacity:.35});
+  const wallLines=new THREE.LineSegments(wallGeo,wallMat);
+  threeScene.add(wallLines);
+
+  // start / goal
+  const sgGeo=new THREE.SphereGeometry(.09,16,16);
+  const startMat=new THREE.MeshBasicMaterial({color:0x0078ff});
+  const goalMat=new THREE.MeshBasicMaterial({color:0xff6b6b});
+  const startM=new THREE.Mesh(sgGeo,startMat);
+  startM.position.copy(points3[0]);
+  const goalM=new THREE.Mesh(sgGeo,goalMat);
+  goalM.position.copy(points3[points3.length-1]);
+  threeScene.add(startM,goalM);
+
+  // current marker
+  const markerGeo=new THREE.SphereGeometry(.16,24,24);
+  const markerMat=new THREE.MeshBasicMaterial({color:0xff2d55});
+  threeMarker=new THREE.Mesh(markerGeo,markerMat);
+  threeScene.add(threeMarker);
+
+  updateThreeMarker(currentDistance||0);
+  renderThreeProfile();
+}
+function pointOnThreeTrack(dist){
+  if(!threeTrackData)return null;
+  const {pts,points3,totalDist}=threeTrackData;
+  const d=Math.max(0,Math.min(totalDist,dist));
+  for(let i=1;i<pts.length;i++){
+    if(d<=pts[i].dist){
+      const a=pts[i-1],b=pts[i];
+      const seg=(b.dist-a.dist)||1;
+      const r=Math.max(0,Math.min(1,(d-a.dist)/seg));
+      return points3[i-1].clone().lerp(points3[i],r);
+    }
+  }
+  return points3[points3.length-1].clone();
+}
+function updateThreeMarker(dist){
+  if(!profile3DMode||!threeMarker||!threeTrackData)return;
+  const p=pointOnThreeTrack(dist);
+  if(p){
+    threeMarker.position.copy(p);
+  }
+  renderThreeProfile();
+}
+function renderThreeProfile(){
+  if(!profile3DMode||!threeRenderer||!threeScene||!threeCamera)return;
+  const rect=threeProfile.getBoundingClientRect();
+  const w=Math.max(1,Math.round(rect.width));
+  const h=Math.max(1,Math.round(rect.height));
+  threeRenderer.setSize(w,h,false);
+  threeCamera.aspect=w/h;
+  threeCamera.updateProjectionMatrix();
+  threeRenderer.render(threeScene,threeCamera);
+}
 function drawElevation3D(trackList,markerDist=null){
   const {ctx,width,height}=prepareCanvas(elevationCanvas);
   ctx.clearRect(0,0,width,height);
@@ -776,7 +950,7 @@ function drawElevation3D(trackList,markerDist=null){
   ctx.fillText(Math.round(maxEle)+'m',padL+4,padT+6);
   ctx.fillText(Math.round(minEle)+'m',padL+4,baseY);
 }
-function drawElevation(trackList,markerDist=null){if(profile3DMode){drawElevation3D(trackList,markerDist);return}const {ctx,width,height}=prepareCanvas(elevationCanvas);ctx.clearRect(0,0,width,height);ctx.fillStyle='#111827';ctx.fillRect(0,0,width,height);ctx.fillStyle='#7d8590';ctx.font='10px -apple-system, Helvetica Neue, Arial, sans-serif';ctx.textAlign='left';ctx.textBaseline='top';ctx.fillText('ELEVATION PROFILE',12,8);if(!trackList.length){ctx.font='13px -apple-system, Helvetica Neue, Arial, sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText('GPX / TCXを読み込むと高低図を表示します',width/2,height/2);return}const padL=48,padR=16,padT=28,padB=48,plotW=Math.max(1,width-padL-padR),plotH=Math.max(1,height-padT-padB);let minEle=Infinity,maxEle=-Infinity,eleCount=0,totalDist=0;for(const t of trackList){totalDist+=t.dist||0;for(const p of t.points){if(Number.isFinite(p.ele)){if(p.ele<minEle)minEle=p.ele;if(p.ele>maxEle)maxEle=p.ele;eleCount++}}}if(eleCount<2||totalDist<=0)return;if(maxEle-minEle<1){maxEle+=.5;minEle-=.5}const eleRange=maxEle-minEle,minGrid=Math.floor(minEle/100)*100,maxGrid=Math.ceil(maxEle/100)*100;const labelMinGap=18;let lastEleLabelY=-9999;for(let ele=minGrid;ele<=maxGrid;ele+=100){const y=padT+((maxEle-ele)/eleRange)*plotH;ctx.strokeStyle=(ele%200===0)?'rgba(125,133,144,.35)':'rgba(125,133,144,.18)';ctx.beginPath();ctx.moveTo(padL,y);ctx.lineTo(width-padR,y);ctx.stroke();ctx.fillStyle='#7d8590';if(Math.abs(y-lastEleLabelY)>=labelMinGap||ele===minGrid||ele===maxGrid){ctx.textAlign='right';ctx.textBaseline='middle';ctx.fillText(ele+'m',padL-6,y);lastEleLabelY=y}}const totalKm=totalDist/1000,kmStep=totalKm<=50?5:(totalKm<=100?10:20);for(let km=0;km<=totalKm;km+=kmStep){const x=padL+((km*1000)/totalDist)*plotW;ctx.strokeStyle=(km%(kmStep*2)===0)?'rgba(125,133,144,.35)':'rgba(125,133,144,.18)';ctx.beginPath();ctx.moveTo(x,padT);ctx.lineTo(x,padT+plotH);ctx.stroke();ctx.save();ctx.translate(x,height-padB+36);ctx.rotate(-Math.PI/2);ctx.textAlign='left';ctx.textBaseline='middle';ctx.fillStyle='#7d8590';ctx.fillText(km+'km',0,0);ctx.restore()}let distOffset=0;for(const t of trackList){const pts=simplifyPoints(t.points,5000);ctx.beginPath();pts.forEach((p,i)=>{const x=padL+((distOffset+p.dist)/totalDist)*plotW,y=padT+((maxEle-p.ele)/eleRange)*plotH;if(i===0)ctx.moveTo(x,y);else ctx.lineTo(x,y)});ctx.strokeStyle=DEFAULT_COLOR;ctx.lineWidth=2.2;ctx.lineJoin='round';ctx.lineCap='round';ctx.stroke();distOffset+=t.dist}if(markerDist!==null&&totalDist>0){const mx=padL+(markerDist/totalDist)*plotW;ctx.strokeStyle='#ff2d55';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(mx,padT);ctx.lineTo(mx,padT+plotH);ctx.stroke();const p=getPointAtDistance(markerDist);if(p){const my=padT+((maxEle-p.ele)/eleRange)*plotH;ctx.beginPath();ctx.arc(mx,my,4,0,Math.PI*2);ctx.fillStyle='#ff2d55';ctx.fill();ctx.strokeStyle='#fff';ctx.lineWidth=1.5;ctx.stroke()}}}
+function drawElevation(trackList,markerDist=null){if(profile3DMode){updateThreeMarker(markerDist||0);return}const {ctx,width,height}=prepareCanvas(elevationCanvas);ctx.clearRect(0,0,width,height);ctx.fillStyle='#111827';ctx.fillRect(0,0,width,height);ctx.fillStyle='#7d8590';ctx.font='10px -apple-system, Helvetica Neue, Arial, sans-serif';ctx.textAlign='left';ctx.textBaseline='top';ctx.fillText('ELEVATION PROFILE',12,8);if(!trackList.length){ctx.font='13px -apple-system, Helvetica Neue, Arial, sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText('GPX / TCXを読み込むと高低図を表示します',width/2,height/2);return}const padL=48,padR=16,padT=28,padB=48,plotW=Math.max(1,width-padL-padR),plotH=Math.max(1,height-padT-padB);let minEle=Infinity,maxEle=-Infinity,eleCount=0,totalDist=0;for(const t of trackList){totalDist+=t.dist||0;for(const p of t.points){if(Number.isFinite(p.ele)){if(p.ele<minEle)minEle=p.ele;if(p.ele>maxEle)maxEle=p.ele;eleCount++}}}if(eleCount<2||totalDist<=0)return;if(maxEle-minEle<1){maxEle+=.5;minEle-=.5}const eleRange=maxEle-minEle,minGrid=Math.floor(minEle/100)*100,maxGrid=Math.ceil(maxEle/100)*100;const labelMinGap=18;let lastEleLabelY=-9999;for(let ele=minGrid;ele<=maxGrid;ele+=100){const y=padT+((maxEle-ele)/eleRange)*plotH;ctx.strokeStyle=(ele%200===0)?'rgba(125,133,144,.35)':'rgba(125,133,144,.18)';ctx.beginPath();ctx.moveTo(padL,y);ctx.lineTo(width-padR,y);ctx.stroke();ctx.fillStyle='#7d8590';if(Math.abs(y-lastEleLabelY)>=labelMinGap||ele===minGrid||ele===maxGrid){ctx.textAlign='right';ctx.textBaseline='middle';ctx.fillText(ele+'m',padL-6,y);lastEleLabelY=y}}const totalKm=totalDist/1000,kmStep=totalKm<=50?5:(totalKm<=100?10:20);for(let km=0;km<=totalKm;km+=kmStep){const x=padL+((km*1000)/totalDist)*plotW;ctx.strokeStyle=(km%(kmStep*2)===0)?'rgba(125,133,144,.35)':'rgba(125,133,144,.18)';ctx.beginPath();ctx.moveTo(x,padT);ctx.lineTo(x,padT+plotH);ctx.stroke();ctx.save();ctx.translate(x,height-padB+36);ctx.rotate(-Math.PI/2);ctx.textAlign='left';ctx.textBaseline='middle';ctx.fillStyle='#7d8590';ctx.fillText(km+'km',0,0);ctx.restore()}let distOffset=0;for(const t of trackList){const pts=simplifyPoints(t.points,5000);ctx.beginPath();pts.forEach((p,i)=>{const x=padL+((distOffset+p.dist)/totalDist)*plotW,y=padT+((maxEle-p.ele)/eleRange)*plotH;if(i===0)ctx.moveTo(x,y);else ctx.lineTo(x,y)});ctx.strokeStyle=DEFAULT_COLOR;ctx.lineWidth=2.2;ctx.lineJoin='round';ctx.lineCap='round';ctx.stroke();distOffset+=t.dist}if(markerDist!==null&&totalDist>0){const mx=padL+(markerDist/totalDist)*plotW;ctx.strokeStyle='#ff2d55';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(mx,padT);ctx.lineTo(mx,padT+plotH);ctx.stroke();const p=getPointAtDistance(markerDist);if(p){const my=padT+((maxEle-p.ele)/eleRange)*plotH;ctx.beginPath();ctx.arc(mx,my,4,0,Math.PI*2);ctx.fillStyle='#ff2d55';ctx.fill();ctx.strokeStyle='#fff';ctx.lineWidth=1.5;ctx.stroke()}}}
 function updateUI(last){const has=tracks.length>0;statsWrap.style.display=has?'flex':'none';clearBtn.style.display=has?'':'none';if(!has)return;const totalDist=tracks.reduce((s,t)=>s+t.dist,0),totalGain=tracks.reduce((s,t)=>s+t.gain,0);document.getElementById('sName').textContent=last?last.name:tracks[tracks.length-1].name;document.getElementById('sDist').textContent=fmtDist(totalDist);document.getElementById('sEle').textContent=Math.round(totalGain)+' m'}
 function updateLegend(){
   const trackType=tracks[0]?.type||'gpx';
@@ -933,7 +1107,7 @@ function startPlayback(){
   },50);
 }
 function togglePlayback(){if(isPlaying)stopPlayback();else startPlayback()}
-function loadFile(file){playEnded=false;stopPlayback();const lower=file.name.toLowerCase();if(!lower.endsWith('.gpx')&&!lower.endsWith('.tcx')){showToast(`${file.name} はGPX/TCXファイルではありません`);return}const reader=new FileReader();reader.onload=e=>{try{const parsed=lower.endsWith('.tcx')?parseTCX(e.target.result):parseGPX(e.target.result);let points=enrichSpeed(parsed.points);if(points.length<2){showToast(`${file.name}: トラックポイントが見つかりませんでした`);return}const {dist,gain}=calcStats(points),times=points.map(p=>p.time).filter(v=>Number.isFinite(v)),hasTime=(parsed.type==='tcx'&&times.length>=2),startTime=hasTime?times[0]:null,endTime=hasTime?times[times.length-1]:null,elapsed=hasTime?(endTime-startTime)/1000:0,track={name:parsed.name,points,dist,gain,type:parsed.type,hasTime,startTime,endTime,elapsed};mapLayers.forEach(layer=>map.removeLayer(layer));tracks=[];mapLayers=[];allBounds=null,isReplayMode=false,playEnded=false;currentMarker=null;currentDistance=0;tracks.push(track);addTrackToMap(track);controls.classList.add('show');posSlider.value=0;updateUI(track);updateLegend();replayFinish.classList.remove('show');updateCurrentPositionFromSlider();setTimeout(()=>{map.invalidateSize();fitTrackBounds()},120)}catch(err){console.error(err);showToast(`読み込みエラー: ${err.message}`)}};reader.onerror=()=>showToast(`${file.name}: 読み込みに失敗しました`);reader.readAsText(file,'UTF-8')}
+function loadFile(file){playEnded=false;stopPlayback();const lower=file.name.toLowerCase();if(!lower.endsWith('.gpx')&&!lower.endsWith('.tcx')){showToast(`${file.name} はGPX/TCXファイルではありません`);return}const reader=new FileReader();reader.onload=e=>{try{const parsed=lower.endsWith('.tcx')?parseTCX(e.target.result):parseGPX(e.target.result);let points=enrichSpeed(parsed.points);if(points.length<2){showToast(`${file.name}: トラックポイントが見つかりませんでした`);return}const {dist,gain}=calcStats(points),times=points.map(p=>p.time).filter(v=>Number.isFinite(v)),hasTime=(parsed.type==='tcx'&&times.length>=2),startTime=hasTime?times[0]:null,endTime=hasTime?times[times.length-1]:null,elapsed=hasTime?(endTime-startTime)/1000:0,track={name:parsed.name,points,dist,gain,type:parsed.type,hasTime,startTime,endTime,elapsed};mapLayers.forEach(layer=>map.removeLayer(layer));tracks=[];mapLayers=[];allBounds=null,isReplayMode=false,playEnded=false;currentMarker=null;currentDistance=0;tracks.push(track);addTrackToMap(track);controls.classList.add('show');posSlider.value=0;updateUI(track);updateLegend();replayFinish.classList.remove('show');updateCurrentPositionFromSlider();setTimeout(()=>{map.invalidateSize();fitTrackBounds();if(profile3DMode)buildThreeProfile(tracks)},120)}catch(err){console.error(err);showToast(`読み込みエラー: ${err.message}`)}};reader.onerror=()=>showToast(`${file.name}: 読み込みに失敗しました`);reader.readAsText(file,'UTF-8')}
 document.getElementById('tileToggle').addEventListener('click',e=>{
   e.stopPropagation();
   document.getElementById('tileControl').classList.toggle('open');
@@ -949,9 +1123,13 @@ document.addEventListener('click',e=>{
 });
 view3dBtn.addEventListener('click',()=>{
   profile3DMode=!profile3DMode;
-  document.body.classList.toggle('profile-3d',profile3DMode);
+  document.body.classList.toggle('profile-three',profile3DMode);
   view3dBtn.classList.toggle('active',profile3DMode);
-  drawElevation(tracks,currentDistance);
+  if(profile3DMode){
+    buildThreeProfile(tracks);
+  }else{
+    drawElevation(tracks,currentDistance);
+  }
 });
 document.getElementById('fitBtn').addEventListener('click',e=>{e.stopPropagation();fitTrackBounds()});
 posSlider.addEventListener('input',()=>{playEnded=false;stopPlayback();updateCurrentPositionFromSlider()});playBtn.addEventListener('click',()=>{
@@ -967,6 +1145,6 @@ posSlider.addEventListener('input',()=>{playEnded=false;stopPlayback();updateCur
     updateCurrentPositionByProgress(0);
   }
   togglePlayback();
-});speedSelect.addEventListener('change',()=>{if(isPlaying)startPlayback()});colorMode.addEventListener('change',()=>{updateLegend();redrawMapTracks();updateCurrentPositionFromSlider()});fileInput.addEventListener('change',e=>{const file=e.target.files&&e.target.files[0];if(file)loadFile(file);e.target.value=''});clearBtn.addEventListener('click',()=>{playEnded=false;stopPlayback();mapLayers.forEach(layer=>map.removeLayer(layer));tracks=[];mapLayers=[];currentMarker=null;allBounds=null,isReplayMode=false,playEnded=false;controls.classList.remove('show');replayOverlay.classList.remove('show');replayFinish.classList.remove('show');statsWrap.style.display='none';clearBtn.style.display='none';posSlider.value=0;posDist.textContent='0.0km';posEle.textContent='0m';posPace.textContent='—';posHr.textContent='—';distFill.style.width='0%';eleFill.style.width='0%';paceFill.style.width='0%';hrFill.style.width='0%';drawElevation(tracks)});window.addEventListener('resize',()=>setTimeout(()=>{map.invalidateSize();drawElevation(tracks,currentDistance)},100));drawElevation(tracks);
+});speedSelect.addEventListener('change',()=>{if(isPlaying)startPlayback()});colorMode.addEventListener('change',()=>{updateLegend();redrawMapTracks();updateCurrentPositionFromSlider()});fileInput.addEventListener('change',e=>{const file=e.target.files&&e.target.files[0];if(file)loadFile(file);e.target.value=''});clearBtn.addEventListener('click',()=>{playEnded=false;stopPlayback();mapLayers.forEach(layer=>map.removeLayer(layer));tracks=[];mapLayers=[];currentMarker=null;allBounds=null,isReplayMode=false,playEnded=false;controls.classList.remove('show');replayOverlay.classList.remove('show');replayFinish.classList.remove('show');statsWrap.style.display='none';clearBtn.style.display='none';posSlider.value=0;posDist.textContent='0.0km';posEle.textContent='0m';posPace.textContent='—';posHr.textContent='—';distFill.style.width='0%';eleFill.style.width='0%';paceFill.style.width='0%';hrFill.style.width='0%';drawElevation(tracks)});window.addEventListener('resize',()=>setTimeout(()=>{map.invalidateSize();if(profile3DMode)buildThreeProfile(tracks);else drawElevation(tracks,currentDistance)},100));drawElevation(tracks);
 })();
 </script></body></html>
