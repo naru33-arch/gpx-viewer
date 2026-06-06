@@ -640,6 +640,16 @@ function updateLegend(){
       </div>
     </div>`;
 }
+
+function fmtPaceFromSpeed(speedKmh){
+  if(!Number.isFinite(speedKmh)||speedKmh<=0)return '—';
+  const pace=60/speedKmh;
+  let min=Math.floor(pace);
+  let sec=Math.round((pace-min)*60);
+  if(sec>=60){min+=1;sec-=60}
+  return `${min}:${String(sec).padStart(2,'0')}/km`;
+}
+function updateMeters(p){}
 function updateCurrentPosition(p){if(!p)return;const c=getColorByPoint(p);if(!currentMarker){currentMarker=L.marker([p.lat,p.lon],{icon:makeCurrentIcon('#ff2d55'),zIndexOffset:1000}).addTo(map);mapLayers.push(currentMarker)}else{currentMarker.setIcon(makeCurrentIcon('#ff2d55'));currentMarker.setLatLng([p.lat,p.lon])}const currentPoint=map.latLngToContainerPoint([p.lat,p.lon]),mapSize=map.getSize(),targetPoint=L.point(mapSize.x*.5,mapSize.y*.5),panOffset=currentPoint.subtract(targetPoint);map.panBy(panOffset,{animate:false});currentDistance=p.dist||0;posDist.textContent=(currentDistance/1000).toFixed(1)+'km';
 posEle.textContent=Math.round(p.ele)+'m';
 posPace.textContent=fmtPaceFromSpeed(p.speedKmh);
