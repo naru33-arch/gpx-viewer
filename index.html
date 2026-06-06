@@ -195,7 +195,7 @@ body.replay-mode .stat-value{
   align-items:flex-end;
   gap:4px;
 }
-.tile-toggle{
+.tile-toggle,.fit-toggle{
   min-width:46px;
   height:34px;
   padding:0 10px;
@@ -244,6 +244,15 @@ body.replay-mode .stat-value{
   background:#0078ff;
   border-color:#0078ff;
 }
+
+.fit-toggle{
+  margin-top:2px;
+  background:rgba(15,52,96,.88);
+}
+.fit-toggle:active,.tile-toggle:active{
+  transform:scale(.97);
+}
+
 
 .legend{
   margin-left:auto;
@@ -303,6 +312,7 @@ body.replay-mode .stat-value{
     </div>
     <div class="tile-control" id="tileControl">
       <button type="button" class="tile-toggle" id="tileToggle">地図</button>
+      <button type="button" class="fit-toggle" id="fitBtn">全体</button>
       <div class="tile-menu" id="tileMenu">
         <button type="button" data-tile="gsi_std" class="active">地理院 標準</button>
         <button type="button" data-tile="gsi_pale">地理院 淡色</button>
@@ -382,6 +392,11 @@ function setBaseTile(key){
   });
 }
 setBaseTile('gsi_std');
+function fitTrackBounds(){
+  if(allBounds&&allBounds.isValid()){
+    map.fitBounds(allBounds,{padding:[34,34],animate:false});
+  }
+}
 function showToast(msg){const t=document.getElementById('toast');t.textContent=msg;t.style.display='block';setTimeout(()=>{t.style.display='none'},4000)}
 function fmtDist(m){return m>=1000?(m/1000).toFixed(2)+' km':Math.round(m)+' m'}
 function haversine(a,b){const R=6371000,r=Math.PI/180,dLat=(b.lat-a.lat)*r,dLon=(b.lon-a.lon)*r,s=Math.sin(dLat/2)**2+Math.cos(a.lat*r)*Math.cos(b.lat*r)*Math.sin(dLon/2)**2;return R*2*Math.atan2(Math.sqrt(s),Math.sqrt(1-s))}
@@ -625,14 +640,75 @@ function updateLegend(){
       </div>
     </div>`;
 }
-
 function fmtPaceFromSpeed(speedKmh){
   if(!Number.isFinite(speedKmh)||speedKmh<=0)return '—';
   const pace=60/speedKmh;
-  let min=Math.floor(pace);
-  let sec=Math.round((pace-min)*60);
-  if(sec>=60){min+=1;sec-=60}
+  const min=Math.floor(pace);
+  const sec=Math.round((pace-min)*60);
   return `${min}:${String(sec).padStart(2,'0')}/km`;
+}
+function getProgressPercent(){
+  const total=getTotalDistance();
+  if(!total)return 0;
+  return Math.max(0,Math.min(100,(currentDistance/total)*100));
+}
+function updateReplayOverlay(p){
+  if(!isReplayMode||!p)return;
+  
+  replayTitle.textContent=tracks[0]?.name||'REPLAY';
+  replayDist.textContent=(p.dist/1000).toFixed(1)+'km';
+  replayEle.textContent=Math.round(p.ele)+'m';
+  replayPace.textContent=fmtPaceFromSpeed(p.speedKmh);
+  replayHr.textContent=Number.isFinite(p.hr)?Math.round(p.hr)+'bpm':'—';
+  replayProgress.textContent=Math.round(getProgressPercent())+'%';
+}
+function showFinishOverlay(){}
+function setReplayMode(on){isReplayMode=false}
+function toggleReplayMode(){}
+function startReplayFromBeginning(){}
+
+function clamp01(v){return Math.max(0,Math.min(1,v))}
+function paceColorFromSpeed(speedKmh){
+  if(!Number.isFinite(speedKmh)||speedKmh<=0)return '#7d8590';
+  const pace=60/speedKmh;
+  if(pace<=5.0)return '#2f80ed';
+  if(pace<=6.0)return '#27ae60';
+  if(pace<=7.0)return '#f2c94c';
+  return '#eb5757';
+}
+function hrColor(hr){
+  if(!Number.isFinite(hr))return '#7d8590';
+  if(hr<120)return '#2f80ed';
+  if(hr<140)return '#27ae60';
+  if(hr<155)return '#f2c94c';
+  return '#eb5757';
+}
+function updateMeters(p){
+  const t=tracks[0];
+  const total=t?.dist||getTotalDistance()||1;
+  distFill.style.width=(clamp01((p.dist||0)/total)*100).toFixed(1)+'%';
+
+  let maxEle=-Infinity,minEle=Infinity;
+  if(t&&t.points){
+    for(const pt of t.points){
+      if(Number.isFinite(pt.ele)){
+        if(pt.ele>maxEle)maxEle=pt.ele;
+        if(pt.ele<minEle)minEle=pt.ele;
+      }
+    }
+  }
+  const elePct=(Number.isFinite(maxEle)&&maxEle>minEle)?clamp01((p.ele-minEle)/(maxEle-minEle)):0;
+  eleFill.style.width=(elePct*100).toFixed(1)+'%';
+
+  const speed=p.speedKmh;
+  const pacePct=Number.isFinite(speed)&&speed>0?clamp01(speed/15):0;
+  paceFill.style.width=(pacePct*100).toFixed(1)+'%';
+  paceFill.style.background=paceColorFromSpeed(speed);
+
+  const hr=p.hr;
+  const hrPct=Number.isFinite(hr)?clamp01((hr-90)/80):0;
+  hrFill.style.width=(hrPct*100).toFixed(1)+'%';
+  hrFill.style.background=hrColor(hr);
 }
 function updateCurrentPosition(p){if(!p)return;const c=getColorByPoint(p);if(!currentMarker){currentMarker=L.marker([p.lat,p.lon],{icon:makeCurrentIcon('#ff2d55'),zIndexOffset:1000}).addTo(map);mapLayers.push(currentMarker)}else{currentMarker.setIcon(makeCurrentIcon('#ff2d55'));currentMarker.setLatLng([p.lat,p.lon])}const currentPoint=map.latLngToContainerPoint([p.lat,p.lon]),mapSize=map.getSize(),targetPoint=L.point(mapSize.x*.5,mapSize.y*.5),panOffset=currentPoint.subtract(targetPoint);map.panBy(panOffset,{animate:false});currentDistance=p.dist||0;posDist.textContent=(currentDistance/1000).toFixed(1)+'km';
 posEle.textContent=Math.round(p.ele)+'m';
@@ -706,7 +782,7 @@ function startPlayback(){
   },50);
 }
 function togglePlayback(){if(isPlaying)stopPlayback();else startPlayback()}
-function loadFile(file){playEnded=false;stopPlayback();const lower=file.name.toLowerCase();if(!lower.endsWith('.gpx')&&!lower.endsWith('.tcx')){showToast(`${file.name} はGPX/TCXファイルではありません`);return}const reader=new FileReader();reader.onload=e=>{try{const parsed=lower.endsWith('.tcx')?parseTCX(e.target.result):parseGPX(e.target.result);let points=enrichSpeed(parsed.points);if(points.length<2){showToast(`${file.name}: トラックポイントが見つかりませんでした`);return}const {dist,gain}=calcStats(points),times=points.map(p=>p.time).filter(v=>Number.isFinite(v)),hasTime=(parsed.type==='tcx'&&times.length>=2),startTime=hasTime?times[0]:null,endTime=hasTime?times[times.length-1]:null,elapsed=hasTime?(endTime-startTime)/1000:0,track={name:parsed.name,points,dist,gain,type:parsed.type,hasTime,startTime,endTime,elapsed};mapLayers.forEach(layer=>map.removeLayer(layer));tracks=[];mapLayers=[];allBounds=null,isReplayMode=false,playEnded=false;currentMarker=null;currentDistance=0;tracks.push(track);addTrackToMap(track);controls.classList.add('show');posSlider.value=0;updateUI(track);updateLegend();replayFinish.classList.remove('show');updateCurrentPositionFromSlider()}catch(err){console.error(err);showToast(`読み込みエラー: ${err.message}`)}};reader.onerror=()=>showToast(`${file.name}: 読み込みに失敗しました`);reader.readAsText(file,'UTF-8')}
+function loadFile(file){playEnded=false;stopPlayback();const lower=file.name.toLowerCase();if(!lower.endsWith('.gpx')&&!lower.endsWith('.tcx')){showToast(`${file.name} はGPX/TCXファイルではありません`);return}const reader=new FileReader();reader.onload=e=>{try{const parsed=lower.endsWith('.tcx')?parseTCX(e.target.result):parseGPX(e.target.result);let points=enrichSpeed(parsed.points);if(points.length<2){showToast(`${file.name}: トラックポイントが見つかりませんでした`);return}const {dist,gain}=calcStats(points),times=points.map(p=>p.time).filter(v=>Number.isFinite(v)),hasTime=(parsed.type==='tcx'&&times.length>=2),startTime=hasTime?times[0]:null,endTime=hasTime?times[times.length-1]:null,elapsed=hasTime?(endTime-startTime)/1000:0,track={name:parsed.name,points,dist,gain,type:parsed.type,hasTime,startTime,endTime,elapsed};mapLayers.forEach(layer=>map.removeLayer(layer));tracks=[];mapLayers=[];allBounds=null,isReplayMode=false,playEnded=false;currentMarker=null;currentDistance=0;tracks.push(track);addTrackToMap(track);controls.classList.add('show');posSlider.value=0;updateUI(track);updateLegend();replayFinish.classList.remove('show');updateCurrentPositionFromSlider();setTimeout(()=>{map.invalidateSize();fitTrackBounds()},120)}catch(err){console.error(err);showToast(`読み込みエラー: ${err.message}`)}};reader.onerror=()=>showToast(`${file.name}: 読み込みに失敗しました`);reader.readAsText(file,'UTF-8')}
 document.getElementById('tileToggle').addEventListener('click',e=>{
   e.stopPropagation();
   document.getElementById('tileControl').classList.toggle('open');
@@ -720,6 +796,7 @@ document.addEventListener('click',e=>{
   const tc=document.getElementById('tileControl');
   if(tc&&!tc.contains(e.target))tc.classList.remove('open');
 });
+document.getElementById('fitBtn').addEventListener('click',e=>{e.stopPropagation();fitTrackBounds()});
 posSlider.addEventListener('input',()=>{playEnded=false;stopPlayback();updateCurrentPositionFromSlider()});playBtn.addEventListener('click',()=>{
   if(playEnded&&!isPlaying){
     posSlider.value=0;
