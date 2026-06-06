@@ -346,7 +346,7 @@ body.replay-mode .stat-value{
 <div class="toast" id="toast"></div>
 <script>
 (function(){
-const fileInput=document.getElementById('fileInput'),elevationCanvas=document.getElementById('elevationCanvas'),statsWrap=document.getElementById('statsWrap'),clearBtn=document.getElementById('clearBtn'),controls=document.getElementById('controls'),playBtn=document.getElementById('playBtn'),posSlider=document.getElementById('posSlider'),posDist=document.getElementById('posDist'),posEle=document.getElementById('posEle'),posPace=document.getElementById('posPace'),posHr=document.getElementById('posHr'),distFill=document.getElementById('distFill'),eleFill=document.getElementById('eleFill'),paceFill=document.getElementById('paceFill'),hrFill=document.getElementById('hrFill'),speedSelect=document.getElementById('speedSelect'),colorMode=document.getElementById('colorMode'),legend=document.getElementById('legend'),
+const fileInput=document.getElementById('fileInput'),elevationCanvas=document.getElementById('elevationCanvas'),statsWrap=document.getElementById('statsWrap'),clearBtn=document.getElementById('clearBtn'),controls=document.getElementById('controls'),playBtn=document.getElementById('playBtn'),posSlider=document.getElementById('posSlider'),posDist=document.getElementById('posDist'),posEle=document.getElementById('posEle'),posPace=document.getElementById('posPace'),posHr=document.getElementById('posHr'),distFill=document.getElementById('distFill'),eleFill=document.getElementById('eleFill'),paceFill=document.getElementById('paceFill'),hrFill=document.getElementById('hrFill'),distFill=document.getElementById('distFill'),eleFill=document.getElementById('eleFill'),paceFill=document.getElementById('paceFill'),hrFill=document.getElementById('hrFill'),speedSelect=document.getElementById('speedSelect'),colorMode=document.getElementById('colorMode'),legend=document.getElementById('legend'),
 replayOverlay=document.getElementById('replayOverlay'),
 replayTitle=document.getElementById('replayTitle'),
 replayDist=document.getElementById('replayDist'),
@@ -649,7 +649,54 @@ function fmtPaceFromSpeed(speedKmh){
   if(sec>=60){min+=1;sec-=60}
   return `${min}:${String(sec).padStart(2,'0')}/km`;
 }
-function updateMeters(p){}
+
+
+function clamp01(v){return Math.max(0,Math.min(1,v))}
+function paceColorFromSpeed(speedKmh){
+  if(!Number.isFinite(speedKmh)||speedKmh<=0)return '#7d8590';
+  const pace=60/speedKmh;
+  if(pace<=5.0)return '#2f80ed';
+  if(pace<=6.0)return '#27ae60';
+  if(pace<=7.0)return '#f2c94c';
+  return '#eb5757';
+}
+function hrColor(hr){
+  if(!Number.isFinite(hr))return '#7d8590';
+  if(hr<120)return '#2f80ed';
+  if(hr<140)return '#27ae60';
+  if(hr<155)return '#f2c94c';
+  return '#eb5757';
+}
+function updateMeters(p){
+  if(!p||!distFill||!eleFill||!paceFill||!hrFill)return;
+
+  const t=tracks[0];
+  const total=t?.dist||getTotalDistance()||1;
+  distFill.style.width=(clamp01((p.dist||0)/total)*100).toFixed(1)+'%';
+
+  let maxEle=-Infinity,minEle=Infinity;
+  if(t&&t.points){
+    for(const pt of t.points){
+      if(Number.isFinite(pt.ele)){
+        if(pt.ele>maxEle)maxEle=pt.ele;
+        if(pt.ele<minEle)minEle=pt.ele;
+      }
+    }
+  }
+  const elePct=(Number.isFinite(maxEle)&&maxEle>minEle)?clamp01((p.ele-minEle)/(maxEle-minEle)):0;
+  eleFill.style.width=(elePct*100).toFixed(1)+'%';
+
+  const speed=p.speedKmh;
+  const pacePct=Number.isFinite(speed)&&speed>0?clamp01(speed/15):0;
+  paceFill.style.width=(pacePct*100).toFixed(1)+'%';
+  paceFill.style.background=paceColorFromSpeed(speed);
+
+  const hr=p.hr;
+  const hrPct=Number.isFinite(hr)?clamp01((hr-90)/80):0;
+  hrFill.style.width=(hrPct*100).toFixed(1)+'%';
+  hrFill.style.background=hrColor(hr);
+}
+
 function updateCurrentPosition(p){if(!p)return;const c=getColorByPoint(p);if(!currentMarker){currentMarker=L.marker([p.lat,p.lon],{icon:makeCurrentIcon('#ff2d55'),zIndexOffset:1000}).addTo(map);mapLayers.push(currentMarker)}else{currentMarker.setIcon(makeCurrentIcon('#ff2d55'));currentMarker.setLatLng([p.lat,p.lon])}const currentPoint=map.latLngToContainerPoint([p.lat,p.lon]),mapSize=map.getSize(),targetPoint=L.point(mapSize.x*.5,mapSize.y*.5),panOffset=currentPoint.subtract(targetPoint);map.panBy(panOffset,{animate:false});currentDistance=p.dist||0;posDist.textContent=(currentDistance/1000).toFixed(1)+'km';
 posEle.textContent=Math.round(p.ele)+'m';
 posPace.textContent=fmtPaceFromSpeed(p.speedKmh);
