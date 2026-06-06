@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>GSI Vector Light Replay Test</title>
+
+<link href="https://unpkg.com/maplibre-gl@5.9.0/dist/maplibre-gl.css" rel="stylesheet">
+<script src="https://unpkg.com/maplibre-gl@5.9.0/dist/maplibre-gl.js"></script>
+
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;height:-webkit-fill-available}
+body{
+  font-family:-apple-system,'Helvetica Neue',Arial,sans-serif;
+  background:#111827;
+  color:#e6edf3;
+  display:flex;
+  flex-direction:column;
+  overflow:hidden;
+}
+header{
+  flex-shrink:0;
+  background:#16213e;
+  border-bottom:1px solid #0f3460;
+  padding:10px 14px;
+  padding-top:calc(10px + env(safe-area-inset-top));
+  display:flex;
+  flex-wrap:wrap;
+  gap:8px;
+  align-items:center;
+}
+.logo{
+  width:100%;
+  font-size:13px;
+  font-weight:800;
+  color:#0078ff;
+  letter-spacing:.03em;
+}
+#fileInput{
+  flex:1;
+  min-width:180px;
+  max-width:320px;
+  padding:8px;
+  border:1px solid #1a5276;
+  border-radius:8px;
+  background:#0f3460;
+  color:#e6edf3;
+  font-size:13px;
+}
+button{
+  border:1px solid #1a5276;
+  border-radius:8px;
+  background:#0f3460;
+  color:#e6edf3;
+  font-weight:700;
+  padding:8px 12px;
+  cursor:pointer;
+  -webkit-appearance:none;
+  appearance:none;
+}
+button:active{opacity:.75}
+.stats{
+  width:100%;
+  display:flex;
+  gap:14px;
+  align-items:flex-end;
+  overflow:hidden;
+}
+.stat{min-width:72px}
+.stat.name{flex:1;min-width:0}
+.stat-label{
+  font-size:9px;
+  color:#7d8590;
+  letter-spacing:.08em;
+}
+.stat-value{
+  font-size:13px;
+  font-weight:800;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+.stat-value.hi{color:#0078ff}
+#map{
+  flex:1;
+  min-height:0;
+}
+.toast{
+  position:fixed;
+  top:80px;
+  left:50%;
+  transform:translateX(-50%);
+  background:rgba(255,107,107,.95);
+  color:white;
+  padding:10px 16px;
+  border-radius:10px;
+  z-index:9999;
+  display:none;
+  max-width:90vw;
+  text-align:center;
+  font-size:13px;
+}
+.note{
+  position:absolute;
+  left:10px;
+  bottom:28px;
+  z-index:2;
+  background:rgba(17,24,39,.78);
+  border:1px solid rgba(15,52,96,.9);
+  color:#c9d1d9;
+  padding:6px 8px;
+  border-radius:8px;
+  font-size:10px;
+  pointer-events:none;
+  max-width:calc(100vw - 20px);
+}
+.maplibregl-ctrl-attrib{font-size:10px}
+</style>
+</head>
+
+<body>
+<header>
+  <div class="logo">GSI Vector Light Replay Test</div>
+  <input type="file" id="fileInput" accept=".gpx,.tcx,*/*">
+  <button id="fitBtn" type="button">全体</button>
+  <button id="clearBtn" type="button">クリア</button>
+
+  <div class="stats">
+    <div class="stat name">
+      <div class="stat-label">ファイル名</div>
+      <div class="stat-value" id="sName">—</div>
+    </div>
+    <div class="stat">
+      <div class="stat-label">距離</div>
+      <div class="stat-value hi" id="sDist">—</div>
+    </div>
+    <div class="stat">
+      <div class="stat-label">獲得標高</div>
+      <div class="stat-value" id="sEle">—</div>
+    </div>
+  </div>
+</header>
+
+<div id="map"></div>
+<div class="note">地理院Vector 淡色 / MapLibre GL JS 実験版：白背景ベクトル地図＋軌跡表示の確認用です</div>
+<div class="toast" id="toast"></div>
+
+<script>
+const STYLE_URL='https://gsi-cyberjapan.github.io/gsivectortile-mapbox-gl-js/pale.json';
+
+const fileInput=document.getElementById('fileInput');
+const fitBtn=document.getElementById('fitBtn');
+const clearBtn=document.getElementById('clearBtn');
+const sName=document.getElementById('sName');
+const sDist=document.getElementById('sDist');
+const sEle=document.getElementById('sEle');
+
+let currentTrack=null;
+let currentBounds=null;
+
+function showToast(msg){
+  const t=document.getElementById('toast');
+  t.textContent=msg;
+  t.style.display='block';
+  setTimeout(()=>t.style.display='none',4200);
+}
+
+const map=new maplibregl.Map({
+  container:'map',
+  style:STYLE_URL,
+  center:[139.767144,35.680621],
+  zoom:10,
+  minZoom:4,
+  maxZoom:17.99,
+  attributionControl:true
+});
+
+map.addControl(new maplibregl.NavigationControl({visualizePitch:true}),'top-left');
+map.addControl(new maplibregl.ScaleControl({maxWidth:100,unit:'metric'}),'bottom-left');
+
+map.on('error',e=>console.warn(e));
+
+function haversine(a,b){
+  const R=6371000,r=Math.PI/180;
+  const dLat=(b.lat-a.lat)*r,dLon=(b.lon-a.lon)*r;
+  const s=Math.sin(dLat/2)**2+Math.cos(a.lat*r)*Math.cos(b.lat*r)*Math.sin(dLon/2)**2;
+  return R*2*Math.atan2(Math.sqrt(s),Math.sqrt(1-s));
+}
+function fmtDist(m){return m>=1000?(m/1000).toFixed(2)+' km':Math.round(m)+' m'}
+
+function normalizeDistances(pts){
+  if(!pts||!pts.length)return [];
+  const hasDistance=pts.some(p=>Number.isFinite(p.distance)&&p.distance>0);
+  if(hasDistance){
+    let last=0;
+    return pts.map((p,i)=>{
+      let d=Number.isFinite(p.distance)?p.distance:last;
+      if(i>0&&d<last)d=last;
+      last=d;
+      return {...p,dist:d};
+    });
+  }
+  let dist=0;
+  return pts.map((p,i)=>{
+    if(i>0)dist+=haversine(pts[i-1],p);
+    return {...p,dist};
+  });
+}
+function calcStats(pts){
+  let dist=pts.length?pts[pts.length-1].dist:0,gain=0;
+  for(let i=1;i<pts.length;i++){
+    const d=pts[i].ele-pts[i-1].ele;
+    if(d>0)gain+=d;
+  }
+  return{dist,gain};
+}
+function parseGPX(text){
+  const clean=text.replace(/^\uFEFF/,'');
+  const xml=clean
+    .replace(/\s+xmlns[^=]*="[^"]*"/g,'')
+    .replace(/<([a-zA-Z]+:[a-zA-Z])/g,m=>'<'+m.slice(m.indexOf(':')+1))
+    .replace(/<\/([a-zA-Z]+:[a-zA-Z])/g,m=>'</'+m.slice(m.indexOf(':')+1));
+
+  let name='GPX Track',points=[];
+  try{
+    const doc=new DOMParser().parseFromString(xml,'application/xml');
+    if(!doc.querySelector('parsererror')){
+      name=doc.querySelector('trk > name, rte > name, name')?.textContent?.trim()||name;
+      doc.querySelectorAll('trkpt, rtept').forEach(p=>{
+        const lat=parseFloat(p.getAttribute('lat'));
+        const lon=parseFloat(p.getAttribute('lon'));
+        if(!isNaN(lat)&&!isNaN(lon)){
+          const ele=parseFloat(p.querySelector('ele')?.textContent);
+          points.push({lat,lon,ele:Number.isFinite(ele)?ele:0,distance:null});
+        }
+      });
+    }
+  }catch(_){}
+
+  if(points.length===0){
+    for(const m of clean.matchAll(/<(?:[\w:]*(?:trkpt|rtept))([^>]+)>([\s\S]*?)<\/(?:[\w:]*(?:trkpt|rtept))>/gi)){
+      const attrs=m[1],inner=m[2];
+      const latM=attrs.match(/lat=["']([^"']+)["']/i);
+      const lonM=attrs.match(/lon=["']([^"']+)["']/i);
+      if(!latM||!lonM)continue;
+      const lat=parseFloat(latM[1]),lon=parseFloat(lonM[1]);
+      if(isNaN(lat)||isNaN(lon))continue;
+      const eleM=inner.match(/<(?:[\w:]*ele)[^>]*>([\s\S]*?)<\/(?:[\w:]*ele)>/i);
+      points.push({lat,lon,ele:eleM?parseFloat(eleM[1])||0:0,distance:null});
+    }
+  }
+
+  return{name,points:normalizeDistances(points)};
+}
+function parseTCX(text){
+  const doc=new DOMParser().parseFromString(text.replace(/^\uFEFF/,''),'application/xml');
+  if(doc.querySelector('parsererror'))throw new Error('TCX/XMLとして解析できません');
+  const name=doc.querySelector('Activity Id')?.textContent?.trim()||doc.querySelector('Name')?.textContent?.trim()||'TCX Activity';
+  const points=[];
+  doc.querySelectorAll('Trackpoint').forEach(tp=>{
+    const lat=parseFloat(tp.querySelector('Position LatitudeDegrees')?.textContent);
+    const lon=parseFloat(tp.querySelector('Position LongitudeDegrees')?.textContent);
+    if(isNaN(lat)||isNaN(lon))return;
+    const ele=parseFloat(tp.querySelector('AltitudeMeters')?.textContent);
+    const distance=parseFloat(tp.querySelector('DistanceMeters')?.textContent);
+    points.push({
+      lat,lon,
+      ele:Number.isFinite(ele)?ele:0,
+      distance:Number.isFinite(distance)?distance:null
+    });
+  });
+  return{name,points:normalizeDistances(points)};
+}
+
+function clearTrack(){
+  ['marker-labels','goal-point','start-point','track-line','track-line-outline'].forEach(id=>{
+    if(map.getLayer(id))map.removeLayer(id);
+  });
+  ['markers','track'].forEach(id=>{
+    if(map.getSource(id))map.removeSource(id);
+  });
+  currentTrack=null;
+  currentBounds=null;
+  sName.textContent='—';
+  sDist.textContent='—';
+  sEle.textContent='—';
+}
+
+function addTrack(track){
+  clearTrack();
+
+  if(!track.points||track.points.length<2){
+    showToast('トラックポイントが見つかりませんでした');
+    return;
+  }
+
+  currentTrack=track;
+  const coords=track.points.map(p=>[p.lon,p.lat]);
+  const start=coords[0];
+  const goal=coords[coords.length-1];
+  const stats=calcStats(track.points);
+
+  map.addSource('track',{
+    type:'geojson',
+    data:{
+      type:'FeatureCollection',
+      features:[{type:'Feature',properties:{},geometry:{type:'LineString',coordinates:coords}}]
+    }
+  });
+
+  map.addLayer({
+    id:'track-line-outline',
+    type:'line',
+    source:'track',
+    layout:{'line-join':'round','line-cap':'round'},
+    paint:{'line-color':'#ffffff','line-width':8,'line-opacity':0.9}
+  });
+  map.addLayer({
+    id:'track-line',
+    type:'line',
+    source:'track',
+    layout:{'line-join':'round','line-cap':'round'},
+    paint:{'line-color':'#0078ff','line-width':5,'line-opacity':0.96}
+  });
+
+  map.addSource('markers',{
+    type:'geojson',
+    data:{
+      type:'FeatureCollection',
+      features:[
+        {type:'Feature',properties:{kind:'S'},geometry:{type:'Point',coordinates:start}},
+        {type:'Feature',properties:{kind:'G'},geometry:{type:'Point',coordinates:goal}}
+      ]
+    }
+  });
+  map.addLayer({
+    id:'start-point',
+    type:'circle',
+    source:'markers',
+    filter:['==',['get','kind'],'S'],
+    paint:{'circle-radius':11,'circle-color':'#2f80ed','circle-stroke-color':'#111827','circle-stroke-width':3}
+  });
+  map.addLayer({
+    id:'goal-point',
+    type:'circle',
+    source:'markers',
+    filter:['==',['get','kind'],'G'],
+    paint:{'circle-radius':11,'circle-color':'#ff6b6b','circle-stroke-color':'#111827','circle-stroke-width':3}
+  });
+  map.addLayer({
+    id:'marker-labels',
+    type:'symbol',
+    source:'markers',
+    layout:{'text-field':['get','kind'],'text-size':12},
+    paint:{'text-color':'#111827'}
+  });
+
+  let minLon=Infinity,minLat=Infinity,maxLon=-Infinity,maxLat=-Infinity;
+  coords.forEach(([lon,lat])=>{
+    minLon=Math.min(minLon,lon);maxLon=Math.max(maxLon,lon);
+    minLat=Math.min(minLat,lat);maxLat=Math.max(maxLat,lat);
+  });
+  currentBounds=[[minLon,minLat],[maxLon,maxLat]];
+  fitTrack();
+
+  sName.textContent=track.name;
+  sDist.textContent=fmtDist(stats.dist);
+  sEle.textContent=Math.round(stats.gain)+' m';
+}
+
+function fitTrack(){
+  if(!currentBounds)return;
+  map.fitBounds(currentBounds,{padding:36,duration:350});
+}
+
+function loadFile(file){
+  const lower=file.name.toLowerCase();
+  if(!lower.endsWith('.gpx')&&!lower.endsWith('.tcx')){
+    showToast('GPX/TCXファイルを選択してください');
+    return;
+  }
+  const reader=new FileReader();
+  reader.onload=e=>{
+    try{
+      const track=lower.endsWith('.tcx')?parseTCX(e.target.result):parseGPX(e.target.result);
+      if(!track.name||track.name==='GPX Track'||track.name==='TCX Activity'){
+        track.name=file.name.replace(/\.(gpx|tcx)$/i,'');
+      }
+      addTrack(track);
+    }catch(err){
+      console.error(err);
+      showToast('読み込みエラー: '+err.message);
+    }
+  };
+  reader.onerror=()=>showToast('ファイル読み込みに失敗しました');
+  reader.readAsText(file,'UTF-8');
+}
+
+fileInput.addEventListener('change',e=>{
+  const file=e.target.files&&e.target.files[0];
+  if(file)loadFile(file);
+  e.target.value='';
+});
+fitBtn.addEventListener('click',fitTrack);
+clearBtn.addEventListener('click',clearTrack);
+</script>
+</body>
+</html>
