@@ -314,8 +314,8 @@ body.replay-mode .stat-value{
       <button type="button" class="tile-toggle" id="tileToggle">地図</button>
       <button type="button" class="fit-toggle" id="fitBtn">全体</button>
       <div class="tile-menu" id="tileMenu">
-        <button type="button" data-tile="gsi_std" class="active">地理院 標準</button>
-        <button type="button" data-tile="gsi_pale">地理院 淡色</button>
+        <button type="button" data-tile="gsi_std">地理院 標準</button>
+        <button type="button" data-tile="gsi_pale" class="active">地理院 淡色</button>
         <button type="button" data-tile="gsi_photo">地理院 写真</button>
         <button type="button" data-tile="osm">OSM</button>
         <button type="button" data-tile="opentopo">Topo</button>
@@ -328,6 +328,7 @@ body.replay-mode .stat-value{
     <div class="meter-card pace"><label>PACE</label><span id="posPace">—</span><div class="meter-bar"><div class="meter-fill" id="paceFill"></div></div></div>
     <div class="meter-card hr"><label>HR</label><span id="posHr">—</span><div class="meter-bar"><div class="meter-fill" id="hrFill"></div></div></div>
   </div><input type="range" id="posSlider" min="0" max="1000" value="0"><div class="selects"><select id="speedSelect">
+      <option value="0.25">0.25x</option>
       <option value="0.5">0.5x</option>
       <option value="1" selected>1x</option>
       <option value="2">2x</option>
@@ -391,7 +392,7 @@ function setBaseTile(key){
     btn.classList.toggle('active',btn.dataset.tile===key);
   });
 }
-setBaseTile('gsi_std');
+setBaseTile('gsi_pale');
 function fitTrackBounds(){
   if(allBounds&&allBounds.isValid()){
     map.fitBounds(allBounds,{padding:[34,34],animate:false});
@@ -753,7 +754,7 @@ function startPlayback(){
   setPlaying(true);
 
   // 1x = 全コース30秒で再生。
-  // 0.5x = 60秒、2x = 15秒、4x = 7.5秒。
+  // 0.25x = 120秒、0.5x = 60秒、2x = 15秒、4x = 7.5秒。
   // TCXは実際のTime比率を保ったまま30秒へ圧縮。
   // GPXは距離比率で30秒再生。
   const speed=Number(speedSelect.value)||1;
